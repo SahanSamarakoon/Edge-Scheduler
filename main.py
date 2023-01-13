@@ -1,17 +1,33 @@
 #!/usr/bin/env python3
 
 import json
+import time
 from kubernetes.client.rest import ApiException
 import latency_labeler
 from kubernetes import client, watch
 from scheduler import CustomScheduler
+from destroyer import Destroyer
 
+def get_latency_matrix():
+    with open('data.txt') as f:
+        lines=[line.strip() for line in f.readlines()]
+    
+    node_names = lines[0].split(",")
+    iot_services = lines[1].split(",")
+    latency_matrix = {}
 
-def main():
+    for i, service in enumerate(iot_services):
+        temp_dict = {}
+        temp_ping_list = lines[i+2].split(",")
+        for j in range (len(node_names)):
+            temp_dict[node_names[j]] = int(temp_ping_list[j])
+        latency_matrix[service] = temp_dict
+
+    return latency_matrix
+
+def schedule():
     print("Custom Scheduler is starting...")
     print("\tInit measuring...")
-    # TODO: We should do the measurement and the labeling periodically
-    rtt_matrix = latency_labeler.labeling()
     print("Labeling finished")
     scheduler = CustomScheduler()
     w = watch.Watch()
@@ -25,6 +41,15 @@ def main():
             except client.rest.ApiException as e:
                 print(json.loads(e.body)['message'])
 
+def destroyer():
+    while(True):
+        time.sleep(30)
+        latency_matrix = get_latency_matrix()
+        destroyer = Destroyer(latency_matrix)
+        
 
 if __name__ == '__main__':
+    with concurrent.futures.ThreadPoolExecutor() as executor:   
+        scheduler_thread = executor.submit(schedule)   
+        destroyer_thread = executor.submit(destroyer)
     main()
