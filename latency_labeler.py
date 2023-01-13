@@ -26,9 +26,9 @@ def create_pod_template(pod_name, node_name):
     # Configureate Pod template container
     container = client.V1Container(
         name=pod_name,
-        image='docker.io/centos/tools:latest',
+        image='docker.io/ianneub/network-tools:latest',
         command=['/sbin/init'],
-        image_pull_policy='Never')
+        image_pull_policy='IfNotPresent')
 
     # Create and configurate a spec section
     template = client.V1PodTemplateSpec(
@@ -73,6 +73,14 @@ def get_ping_pod_IPs(ping_pods, pod_IPs):
 
     return pod_IPs
 
+def get_end_device_IPs():
+    end_device_IPs = {}
+    ret = api.list_pod_for_all_namespaces(watch=False)
+    for i in ret.items:
+        if "iot-service" in str(i.metadata.name):
+            end_device_IPs[i.metadata.name] = i.status.pod_ip
+
+    return end_device_IPs
 
 def measure_latency(pod_from, pod_to_IP):
     namespace = 'default'
@@ -83,7 +91,7 @@ def measure_latency(pod_from, pod_to_IP):
                   command=exec_command,
                   stderr=True, stdin=False,
                   stdout=True, tty=False)
-
+    print(resp)
     rtt_line = next(line for line in resp.split('\n') if 'rtt min/avg/max/mdev' in line)
     min_rtt = rtt_line.split('/')[3]
     avg_rtt = rtt_line.split('/')[4]
@@ -144,15 +152,17 @@ def do_labeling(node_name, labels):
         api_response = api_instance.patch_node(node_name, body)
 
 
-def do_measuring(pod_IPs, ping_pods):
-    ping_pods_permutations = list(itertools.permutations(ping_pods, 2))
-    rtt_matrix = {(i, j): np.inf for (i, j) in ping_pods_permutations}
-    for i, j in ping_pods_permutations:
-        if rtt_matrix[(i, j)] == np.inf:
-            print("\tMeasuring {} <-> {}".format(i, j))
-            rtt_matrix[(i, j)] = measure_latency(i, pod_IPs[j])
-            # FIXME: Now we assume that rtt i->j is the same than rtt j->i
-            rtt_matrix[(j, i)] = rtt_matrix[(i, j)]
+def do_measuring(end_device_IPs, pod_nodes_mapping):
+    permutations = list(itertools.product(list(end_device_IPs.keys()),list(pod_nodes_mapping.values())))
+    rtt_matrix = {i: {j:np.inf for (i, j) in permutations } for (i, j) in permutations}
+    for i, j in permutations:
+        if rtt_matrix[i][j] == np.inf:
+            for pod in pod_nodes_mapping:
+                 if pod_nodes_mapping[pod]==j:
+                    pod_name = pod
+                    break
+            print("\tMeasuring {} <-> {}".format(pod_name, i))
+            rtt_matrix[i][j] = measure_latency(pod_name, end_device_IPs[i])
     return rtt_matrix
 
 
@@ -170,15 +180,16 @@ def labeling():
     pod_IPs = get_ping_pod_IPs(ping_pod_list, pod_IPs)
 
     # Measure latency
-    rtt_matrix = do_measuring(pod_IPs, ping_pod_list)
+    # rtt_matrix = do_measuring(pod_IPs, ping_pod_list)
+    end_device_IPs = get_end_device_IPs()
+    rtt_matrix = do_measuring(end_device_IPs, pod_nodes_mapping)
 
     # Do labeling
-    for pod in ping_pod_list:
-        labels = get_rtt_labels_of_node(pod, rtt_matrix, ping_pod_list, pod_nodes_mapping)
-        do_labeling(pod_nodes_mapping[pod], labels)
+    # for pod in ping_pod_list:
+    #     labels = get_rtt_labels_of_node(pod, rtt_matrix, ping_pod_list, pod_nodes_mapping)
+    #     do_labeling(pod_nodes_mapping[pod], labels)
 
     return rtt_matrix
-
 
 def main():
     print("Start labeling...")
@@ -190,3 +201,9 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+# To create IoT Service Pods:
+# kubectl create deployment iot-service --image=busybox --replicas=2 -- sleep infinity
+
+# To check pod ips
+# kubectl get pods --output=wide
