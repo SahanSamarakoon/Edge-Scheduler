@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iot_service_01
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iot_service_01
+  template:
+    metadata:
+      name: iot_service_01
+      labels:
+        app: iot_service_01
+        qos_latency: "18"
+    spec:
+      containers:
+        - name: iotservice1pod1-container
+          image: docker.io/centos/tools:latest
+          resources:
+            limits:
+              memory: "1Gi"
+            requests:
+              memory: "1Gi"
+          command:
+            - /sbin/init
+      schedulerName: custom-scheduler

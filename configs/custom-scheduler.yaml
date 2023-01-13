@@ -9,9 +9,9 @@ kind: ClusterRoleBinding
 metadata:
   name: custom-scheduler-as-kube-scheduler
 subjects:
-- kind: ServiceAccount
-  name: custom-scheduler
-  namespace: kube-system
+  - kind: ServiceAccount
+    name: custom-scheduler
+    namespace: kube-system
 roleRef:
   kind: ClusterRole
   name: system:kube-scheduler
@@ -40,17 +40,17 @@ spec:
     spec:
       serviceAccountName: custom-scheduler
       containers:
-      - name: kube-second-scheduler
-        image: davidhaja/kube-repo:demo2
-        imagePullPolicy: IfNotPresent
-        resources:
-          requests:
-            cpu: '0.1'
-        securityContext:
-          privileged: false
-        volumeMounts: []
+        - name: kube-second-scheduler
+          image: edge-scheduler/demo1:latest
+          imagePullPolicy: Never
+          resources:
+            requests:
+              cpu: "0.1"
+          securityContext:
+            privileged: false
+          volumeMounts: []
       imagePullSecrets:
-      - name: regcred
+        - name: regcred
       nodeSelector:
         kubernetes.io/hostname: master
       hostNetwork: false

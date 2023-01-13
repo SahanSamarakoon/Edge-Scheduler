@@ -1,0 +1,5 @@
+master-m02,master-m03,master-m04
+iot_service_01,iot_service_02,iot_service_03
+10, 15, 20
+15, 20, 5
+25, 10, 15
