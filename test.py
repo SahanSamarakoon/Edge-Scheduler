@@ -1,6 +1,6 @@
 with open('data.txt') as f:
     lines=[line.strip() for line in f.readlines()]
-    
+
 node_names = lines[0].split(",")
 iot_services = lines[1].split(",")
 
@@ -14,5 +14,3 @@ for i, service in enumerate(iot_services):
     latency_matrix[service] = temp_dict
 
 print(latency_matrix)
-
-

@@ -46,7 +46,6 @@ def destroyer():
         time.sleep(30)
         latency_matrix = get_latency_matrix()
         destroyer = Destroyer(latency_matrix)
-        
 
 if __name__ == '__main__':
     with concurrent.futures.ThreadPoolExecutor() as executor:   

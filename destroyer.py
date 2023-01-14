@@ -35,11 +35,22 @@ class Destroyer(object):
         else:
             return [x for x in self.v1.list_pod_for_all_namespaces(watch=False).items if x.spec.node_name == node_name]
 
+    def check_pod(self, pod, node):
+        iot_device_servicename = pod.metadata.labels['app']
+        latency = int(latency_matrix.get(iot_device_servicename).get(node.metadata.name))
+        required_delay = int(pod.metadata.labels['qos_latency'])
+        if latency <= required_delay:
+                return True
+        return False
+
     def check_destroyble():
         available_nodes = self.nodes_available()
         for node in available_nodes:
             pod_list_in_node = get_pods_on_node(node.metadata.name)
-
+            for pod in pod_list_in_node:
+                if (check_pod(pode, node)):
+                    destroy(pode)
 
     def destroy(pod, namespace="default"):
         self.v1.delete_namespaced_pod(name=pod.metadata.name, namespace=namespace)
+        time.sleep(30)
