@@ -41,7 +41,7 @@ spec:
       serviceAccountName: custom-scheduler
       containers:
         - name: kube-second-scheduler
-          image: edge-scheduler/demo1:latest
+          image: edge_genics:demo1
           imagePullPolicy: Never
           resources:
             requests:

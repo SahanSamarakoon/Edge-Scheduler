@@ -9,7 +9,7 @@ from placeholder import Placeholder
 
 class CustomScheduler(object):
 
-    def __init__(self, latency_matrix, scheduler_name="custom-scheduler"):
+    def __init__(self, scheduler_name="custom-scheduler"):
         self.load_config()
         self.v1 = client.CoreV1Api()
         self.scheduler_name = scheduler_name
@@ -25,21 +25,31 @@ class CustomScheduler(object):
             # print("WARNING %s\n" % e)
             config.load_incluster_config()
 
+    @staticmethod
+    def convert_to_int(resource_string):
+        if 'Ki' in resource_string:
+            return int(resource_string.split('K')[0])*1024
+        elif 'Mi' in resource_string:
+            return int(resource_string.split('M')[0])*(1024**2)
+        elif 'Gi' in resource_string:
+            return int(resource_string.split('G')[0])*(1024**3)
+
     def update_latency_matrix(self):
         with open('data.txt') as f:
             lines=[line.strip() for line in f.readlines()]
     
         node_names = lines[0].split(",")
         iot_services = lines[1].split(",")
-        latency_matrix = {}
+        new_latency_matrix = {}
 
         for i, service in enumerate(iot_services):
             temp_dict = {}
             temp_ping_list = lines[i+2].split(",")
             for j in range (len(node_names)):
                 temp_dict[node_names[j]] = int(temp_ping_list[j])
-            latency_matrix[service] = temp_dict
-        self.latency_matrix=latency_matrix
+            new_latency_matrix[service] = temp_dict
+        print("Scheduler Latency Matrix Updated")
+        self.latency_matrix=new_latency_matrix
 
     def get_pods_on_node(self, node_name, kube_system=False):
         if not kube_system:
@@ -47,14 +57,17 @@ class CustomScheduler(object):
                     x.metadata.namespace != 'kube-system' and x.spec.node_name == node_name]
         else:
             return [x for x in self.v1.list_pod_for_all_namespaces(watch=False).items if x.spec.node_name == node_name]
+    
+    def get_node_from_name(self, node_name):
+        return next(x for x in self.v1.list_node().items if x.metadata.name == node_name)
 
     def get_nodes_in_radius(self, iot_device_servicename, required_delay,):
         available_nodes = self.nodes_available()
         latency_list= self.latency_matrix.get(iot_device_servicename)
         node_names = set()
-        for edge, latency in latency_list:
+        for edge, latency in latency_list.items():
             if latency <= required_delay:
-                node_names = node_names.add(edge)
+                node_names.add(edge)
         return [self.get_node_from_name(x) for x in node_names if x in available_nodes]
         
     def nodes_available(self):
@@ -191,27 +204,29 @@ class CustomScheduler(object):
 
     def create_new_placeholder(self, nodes_enough_resource):
         placeholder = Placeholder()
-        # placeholder.node = random.choice(nodes_enough_resource).metadata.name
+        placeholder.node = random.choice(nodes_enough_resource).metadata.name
         # placeholder.node = nodes_enough_resource[-1].metadata.name
-        placeholder.node = next(x for x in nodes_enough_resource if x.metadata.name == 'edge-3').metadata.name
+        # placeholder.node = next(x for x in nodes_enough_resource if x.metadata.name == 'edge-3').metadata.name
         self.placeholders.append(placeholder)
         return placeholder
 
-    def schedule(self, pod, namespace="default"):
-        update_latency_matrix()
-
-        if pod.metadata.name.split('-')[0] in self.rescedules.keys():
-                node = self.rescedules[pod.metadata.name.split('-')[0]]
-                del self.rescedules[pod.metadata.name.split('-')[0]]
-                self.bind(pod, node)
-                return
-
-        any_assigned_placeholder, placeholder = self.pod_has_placeholder(pod)
-        if any_assigned_placeholder:
-        # The Pod has already an assigned placeholder so probably a node failure occurred, we need to restart the pod
-            self.patch_pod(pod, placeholder.node)
-        else:
-            # New Pod request
+    def check_destroyed(pod, node):
+        iot_device_servicename = pod.metadata.labels['app']
+        latency = int(latency_matrix.get(iot_device_servicename).get(node.metadata.name))
+        required_delay = int(pod.metadata.labels['qos_latency'])
+        if latency <= required_delay:
+                return True
+        return False
+    
+    def pod_has_placeholder(self, pod):
+        try:
+            # FIXME: '-' character assumed as splitting character
+            return True, next(ph for ph in self.placeholders if pod.metadata.name.split('-')[0] in ph.pods)
+        except StopIteration:
+            return False, None
+    
+    def new_pod(self, pod, namespace="default"):
+        # New Pod request
             # Get the delay constraint value from the labels
             iot_device_servicename = pod.metadata.labels['app']
             required_delay = int(pod.metadata.labels['qos_latency'])
@@ -247,3 +262,30 @@ class CustomScheduler(object):
                 print("WARNING No placeholder will be assigned to this Pod!")
             node = nodes_enough_resource_in_rad[0]
             self.bind(pod, node.metadata.name, namespace)
+
+    def schedule(self, pod, namespace="default"):
+        print("Scheduling Started ...")
+        self.update_latency_matrix()
+
+        if pod.metadata.name.split('-')[0] in self.rescedules.keys():
+            print("Rescheduling Pod")
+            node = self.rescedules[pod.metadata.name.split('-')[0]]
+            del self.rescedules[pod.metadata.name.split('-')[0]]
+            self.bind(pod, node)
+            return
+
+        any_assigned_placeholder, placeholder = self.pod_has_placeholder(pod)
+        print(any_assigned_placeholder, placeholder)
+        if any_assigned_placeholder:
+            # Check for destroyed pods by destoyer
+            if (self.check_destroyed(pod, placeholder.node)):
+                print("Destroyed Pod Detected")
+                self.placeholders.remove(placeholder)
+                self.new_pod(pod)
+            else:
+                # The Pod has already an assigned placeholder so probably a node failure occurred, we need to restart the pod
+                print("Placeholder Pod Detected")
+                self.patch_pod(pod, placeholder.node)
+        else:
+            print("New Pod Detected")
+            self.new_pod(pod)

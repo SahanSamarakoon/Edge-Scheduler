@@ -7,7 +7,6 @@ from kubernetes.client.rest import ApiException
 from kubernetes import client, config
 from placeholder import Placeholder
 
-
 class CustomScheduler(object):
 
     def __init__(self, scheduler_name="custom-scheduler"):

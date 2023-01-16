@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: iot_service_01
+  name: iotservice01
 spec:
   replicas: 1
   selector:
@@ -9,7 +9,7 @@ spec:
       app: iot_service_01
   template:
     metadata:
-      name: iot_service_01
+      name: iotservice01
       labels:
         app: iot_service_01
         qos_latency: "18"
@@ -17,6 +17,7 @@ spec:
       containers:
         - name: iotservice1pod1-container
           image: docker.io/centos/tools:latest
+          imagePullPolicy: Never
           resources:
             limits:
               memory: "1Gi"
