@@ -73,9 +73,10 @@ class CustomScheduler(object):
     def nodes_available(self):
         ready_nodes = []
         for n in self.v1.list_node().items:
-            for status in n.status.conditions:
-                if status.status == "True" and status.type == "Ready":
-                    ready_nodes.append(n.metadata.name)
+            for n.
+                for status in n.status.conditions:
+                    if status.status == "True" and status.type == "Ready":
+                        ready_nodes.append(n.metadata.name)
         return ready_nodes
 
     def narrow_nodes_by_capacity(self, pod, node_list):
@@ -277,7 +278,7 @@ class CustomScheduler(object):
         any_assigned_placeholder, placeholder = self.pod_has_placeholder(pod)
         print(any_assigned_placeholder, placeholder)
         if any_assigned_placeholder:
-            # Check for destroyed pods by destoyer
+            # Check for destroyed pods by destroyer
             if (self.check_destroyed(pod, placeholder.node)):
                 print("Destroyed Pod Detected")
                 self.placeholders.remove(placeholder)

@@ -7,6 +7,7 @@ spec:
   selector:
     matchLabels:
       app: iot_service_01
+      area: location_01
   template:
     metadata:
       name: iotservice01
@@ -26,3 +27,4 @@ spec:
           command:
             - /sbin/init
       schedulerName: custom-scheduler
+      priorityClassName: null

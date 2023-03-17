@@ -5,14 +5,13 @@ import random
 import json
 from kubernetes.client.rest import ApiException
 from kubernetes import client, config
-from placeholder import Placeholder
 
-class Destroyer(object):
+class Handler(object):
 
     def __init__(self):
-        self.name = "Name"
         self.load_config()
         self.v1 = client.CoreV1Api()
+        self.apps_v1 = client.AppsV1Api()
         self.latency_matrix = dict()
 
     @staticmethod
@@ -25,7 +24,7 @@ class Destroyer(object):
 
     def set_latency_matrix(self, new_latency_matrix):
         self.latency_matrix = new_latency_matrix
-        print("Destroyer Latency Matrix Updated")
+        print("Handler - Latency Matrix Updated")
     
     def nodes_available(self):
         ready_nodes = []
@@ -43,30 +42,31 @@ class Destroyer(object):
             return [x for x in self.v1.list_pod_for_all_namespaces(watch=False).items if x.spec.node_name == node_name]
 
     def check_pod(self, pod, node):
-        print("Checking Latency between pod and node")
+        print("Handler - Checking Latency between pod and node")
         iot_device_servicename = pod.metadata.labels['app']
         latency = int(self.latency_matrix.get(iot_device_servicename).get(node))
         required_delay = int(pod.metadata.labels['qos_latency'])
         if latency >= required_delay:
-            return self.check_again(pod, node, iot_device_servicename, required_delay)
+            return True
         return False
 
-    def check_again(self, pod, node, iot_device_servicename, required_delay):
-        print("Again Checking Latency between pod and node after 30s")
-        latency = int(self.latency_matrix.get(iot_device_servicename).get(node))
-        if latency >= required_delay:
-            return True
-
-    def check_destroyble(self):
-        print("Checking for Latency Violations...")
+    def check_violations(self):
+        print("Handler - Checking for Latency Violations...")
         available_nodes = self.nodes_available()
         for node in available_nodes:
             pod_list_in_node = self.get_pods_on_node(node)
             for pod in pod_list_in_node:
                 if (self.check_pod(pod, node)):
-                    print("Destroying {} in ".format(pod.metadata.name, node))
-                    self.destroy(pod)
+                    print("Handler - Latency Violated")
+                    self.scaler(pod)
 
-    def destroy(self, pod, namespace="default"):
-        self.v1.delete_namespaced_pod(name=pod.metadata.name, namespace=namespace)
-        time.sleep(30)
+    def scaler(self, pod, namespace="default"):
+        print("Handler - Upscaling {}".format(pod.metadata.name))
+        current_scaling = self.apps_v1.read_namespaced_deployment_scale(name=pod.metadata.name.split("-")[0], namespace=namespace)
+        current_scaling = current_scaling.status.replicas
+        self.apps_v1.patch_namespaced_deployment(name=pod.metadata.name.split("-")[0], namespace=namespace, body={"spec": {"replicas": current_scaling + 1}})
+        print("Handler - Sleeping for 30s")
+        time.sleep(5)
+        print("Handler - Downscaling {}".format(pod.metadata.name))
+        self.v1.delete_namespaced_pod(name=pod.metadata.name, namespace=namespace, grace_period_seconds=0)
+        self.apps_v1.patch_namespaced_deployment(name=pod.metadata.name.split("-")[0], namespace=namespace, body={"spec": {"replicas": current_scaling}})

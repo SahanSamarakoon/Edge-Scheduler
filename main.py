@@ -7,7 +7,7 @@ from kubernetes.client.rest import ApiException
 import latency_labeler
 from kubernetes import client, watch
 from scheduler import CustomScheduler
-from destroyer import Destroyer
+from handler import Handler
 
 def get_latency_matrix():
     with open('data.txt') as f:
@@ -30,7 +30,6 @@ def schedule():
     print("Custom Scheduler is starting...")
     scheduler = CustomScheduler()
     w = watch.Watch()
-    # FIXME: API BUG: https://github.com/kubernetes-client/python/issues/547 -> we assume all scheduling will be OK
     for event in w.stream(scheduler.v1.list_namespaced_pod, "default"):
         print("Event Occured...")
         if event['object'].status.phase == "Pending" and event['type'] == "ADDED" and \
@@ -41,21 +40,21 @@ def schedule():
                 res = scheduler.schedule(event['object'])
             except client.rest.ApiException as e:
                 print(json.loads(e.body)['message'])
-
-def destroyer():
-    print("Destroyer is starting...")
-    destroyer_ob = Destroyer()
+                
+def handler():
+    print("Handler is starting...")
+    handler_ob = Handler()
     while(True):        
         latency_matrix = get_latency_matrix()
-        destroyer_ob.set_latency_matrix(latency_matrix)
-        destroyer_ob.check_destroyble()
-        print("Wait for 15s...")
+        handler_ob.set_latency_matrix(latency_matrix)
+        handler_ob.check_violations()
+        print("Handler - Wait for 15s...")
         time.sleep(5)
 
 if __name__ == '__main__':
     with concurrent.futures.ThreadPoolExecutor() as executor:   
         scheduler_thread = executor.submit(schedule)   
-        destroyer_thread = executor.submit(destroyer)
+        handler_thread = executor.submit(handler)
 
 
 #            master-m02,   master-m03,   master-m04
