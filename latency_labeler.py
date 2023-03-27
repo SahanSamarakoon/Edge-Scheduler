@@ -82,21 +82,24 @@ def get_end_device_IPs():
 
     return end_device_IPs
 
-def measure_latency(pod_from, pod_to_IP):
+def measure_latency(pod_from, end_device_IP):
     namespace = 'default'
 
-    exec_command = ['/bin/sh', '-c', 'ping -c 5 {}'.format(pod_to_IP)]
+    exec_command = ['/bin/sh', '-c', 'ping -c 10 {}'.format(end_device_IP)]
 
     resp = stream(api.connect_get_namespaced_pod_exec, pod_from, namespace,
                   command=exec_command,
                   stderr=True, stdin=False,
                   stdout=True, tty=False)
     print(resp)
-    rtt_line = next(line for line in resp.split('\n') if 'rtt min/avg/max/mdev' in line)
-    min_rtt = rtt_line.split('/')[3]
-    avg_rtt = rtt_line.split('/')[4]
-    max_rtt = rtt_line.split('/')[5]
-    return float(avg_rtt)
+    rtt_times = []
+    for line in resp.split('\n'):
+        if 'time=' in line:
+            rtt_time = float(line.split('=')[-1][:-3])
+            rtt_times.append(rtt_time)
+    np_rtt_times = np.array(rtt_times)
+    rtt_value = np.percentile(np_rtt_times, 95)
+    return rtt_value
 
 
 def get_rtt_labels_of_node(node, rtt_matrix, ping_pods, POD_NODES_MAP):
@@ -114,6 +117,21 @@ def get_rtt_labels_of_node(node, rtt_matrix, ping_pods, POD_NODES_MAP):
 
     return rtt_list
 
+def get_zone_label_of_node(node_name):
+    ret = api.list_node(watch=False)
+    for node in ret.items:
+        if (node.metadata.name == node_name):
+            for label,label_value in node.metadata.labels.items():
+                if "area" in label:
+                        return label_value
+
+def get_zone_label_of_service(pod_name):
+    ret = api.list_pod_for_all_namespaces(watch=False)
+    for pod in ret.items:
+        if (str(pod.metadata.name) == pod_name):
+            for label,label_value in pod.metadata.labels.items():
+                if "area" in label:
+                        return label_value
 
 def do_labeling(node_name, labels):
     # FIXME: This method could be stucked into a unvalid state: if we already delete the old rtt labels,
@@ -156,7 +174,9 @@ def do_measuring(end_device_IPs, pod_nodes_mapping):
     permutations = list(itertools.product(list(end_device_IPs.keys()),list(pod_nodes_mapping.values())))
     rtt_matrix = {i: {j:np.inf for (i, j) in permutations } for (i, j) in permutations}
     for i, j in permutations:
-        if rtt_matrix[i][j] == np.inf:
+        end_device_zone = get_zone_label_of_service(i)
+        edge_node_zone = get_zone_label_of_node(j)
+        if (end_device_zone==edge_node_zone and rtt_matrix[i][j] == np.inf):
             for pod in pod_nodes_mapping:
                  if pod_nodes_mapping[pod]==j:
                     pod_name = pod
