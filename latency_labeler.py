@@ -26,8 +26,8 @@ def create_pod_template(pod_name, node_name):
     # Configureate Pod template container
     container = client.V1Container(
         name=pod_name,
-        image='docker.io/ianneub/network-tools:latest',
-        command=['/sbin/init'],
+        image='busybox',
+        command=['sleep','infinity'],
         image_pull_policy='IfNotPresent')
 
     # Create and configurate a spec section
