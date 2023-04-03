@@ -36,7 +36,7 @@ class CustomScheduler(object):
 
     def set_latency_matrix(self, new_latency_matrix):
         self.latency_matrix = new_latency_matrix
-        print("Handler - Latency Matrix Updated")
+        print("Scheduler - Latency Matrix Updated")
 
     def get_pods_on_node(self, node_name, kube_system=False):
         if not kube_system:

@@ -37,7 +37,7 @@ class Handler(object):
     def get_pods_on_node(self, node_name, kube_system=False):
         if not kube_system:
             return [x for x in self.v1.list_pod_for_all_namespaces(watch=False).items if
-                    x.metadata.namespace != 'kube-system' and x.spec.node_name == node_name]
+                    (x.metadata.namespace != 'kube-system' and x.metadata.namespace != 'kubernetes-dashboard') and x.spec.node_name == node_name]
         else:
             return [x for x in self.v1.list_pod_for_all_namespaces(watch=False).items if x.spec.node_name == node_name]
 

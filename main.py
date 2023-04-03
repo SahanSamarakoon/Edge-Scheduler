@@ -16,7 +16,9 @@ def update_latency_matrix():
     latency_calculator_ob = LatencyCalculator()
     while(True):
         time.sleep(5)
-        latency_matrix = latency_labeller_ob.labeling()
+        print("123")
+        latency_matrix = latency_calculator_ob.labeling()
+        print("123456")
     # with open('data.txt') as f:
     #     lines=[line.strip() for line in f.readlines()]
     
