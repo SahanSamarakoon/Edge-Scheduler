@@ -8,13 +8,13 @@ import latency_labeler
 from kubernetes import client, watch
 from scheduler import CustomScheduler
 from handler import Handler
-from latency_labeler import LatencyLabeler
+from latency_calculator import LatencyCalculator
 
 latency_matrix = {}
 
 def update_latency_matrix():
     
-    latency_labeller_ob = LatencyLabeler()
+    latency_calculator_ob = LatencyCalculator()
     while(True):
         time.sleep(5)
         latency_matrix = latency_labeller_ob.labeling()
