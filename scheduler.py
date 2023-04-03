@@ -34,22 +34,9 @@ class CustomScheduler(object):
         elif 'Gi' in resource_string:
             return int(resource_string.split('G')[0])*(1024**3)
 
-    def update_latency_matrix(self):
-        with open('data.txt') as f:
-            lines=[line.strip() for line in f.readlines()]
-    
-        node_names = lines[0].split(",")
-        iot_services = lines[1].split(",")
-        new_latency_matrix = {}
-
-        for i, service in enumerate(iot_services):
-            temp_dict = {}
-            temp_ping_list = lines[i+2].split(",")
-            for j in range (len(node_names)):
-                temp_dict[node_names[j]] = int(temp_ping_list[j])
-            new_latency_matrix[service] = temp_dict
-        print("Scheduler Latency Matrix Updated")
-        self.latency_matrix=new_latency_matrix
+    def set_latency_matrix(self, new_latency_matrix):
+        self.latency_matrix = new_latency_matrix
+        print("Handler - Latency Matrix Updated")
 
     def get_pods_on_node(self, node_name, kube_system=False):
         if not kube_system:
@@ -268,7 +255,7 @@ class CustomScheduler(object):
 
     def schedule(self, pod, namespace="default"):
         print("Scheduling Started ...")
-        self.update_latency_matrix()
+        # self.update_latency_matrix()
 
         if pod.metadata.name.split('-')[0] in self.rescedules.keys():
             print("Rescheduling Pod")
