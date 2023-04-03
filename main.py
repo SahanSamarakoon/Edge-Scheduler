@@ -59,7 +59,7 @@ def handler():
 
 if __name__ == '__main__':
     with concurrent.futures.ThreadPoolExecutor() as executor: 
-        latency_labeler = excutor.submit(update_latency_matrix)
+        latency_labeler = executor.submit(update_latency_matrix)
         scheduler_thread = executor.submit(schedule)   
         handler_thread = executor.submit(handler)
         
