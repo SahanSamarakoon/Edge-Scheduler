@@ -12,12 +12,12 @@ spec:
       name: iotservice01
       labels:
         app: iot_service_01
-        area: location_01
+        area: zone1
         qos_latency: "18"
     spec:
       containers:
         - name: iotservice1pod1-container
-          image: docker.io/centos/tools:latest
+          image: tempdecal/odmv3:2.6.0
           imagePullPolicy: Never
           resources:
             limits:
@@ -27,4 +27,3 @@ spec:
           command:
             - /sbin/init
       schedulerName: custom-scheduler
-      priorityClassName: null
