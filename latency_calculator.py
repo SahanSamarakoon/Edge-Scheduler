@@ -13,7 +13,8 @@ import numpy as np
 class LatencyCalculator(object):
 
     def __init__(self):
-        self.api = core_v1_api.CoreV1Api()
+        self.load_config()
+        self.api = client.CoreV1Api()
         self.kube_client = client.AppsV1Api()
 
     @staticmethod
@@ -47,8 +48,6 @@ class LatencyCalculator(object):
     def deploy_rtt_deployment(self,pod_IPs, pod_node_mapping):
         for pod, pod_ip in pod_IPs.items():
             if pod_ip == None:
-                template = self.create_pod_template(pod, pod_node_mapping[pod])
-
                 api_instance = client.CoreV1Api()
                 namespace = 'default'
                 body = client.V1Pod(metadata=template.metadata, spec=template.spec)
