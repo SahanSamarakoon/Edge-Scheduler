@@ -7,12 +7,12 @@ spec:
   selector:
     matchLabels:
       app: iot_service_01
-      area: location_01
   template:
     metadata:
       name: iotservice01
       labels:
         app: iot_service_01
+        area: location_01
         qos_latency: "18"
     spec:
       containers:

@@ -61,8 +61,8 @@ class CustomScheduler(object):
     def get_node_from_name(self, node_name):
         return next(x for x in self.v1.list_node().items if x.metadata.name == node_name)
 
-    def get_nodes_in_radius(self, iot_device_servicename, required_delay,):
-        available_nodes = self.nodes_available()
+    def get_nodes_in_radius(self, iot_device_servicename, iot_device_area, required_delay,):
+        available_nodes = self.nodes_available(self, iot_device_area)
         latency_list= self.latency_matrix.get(iot_device_servicename)
         node_names = set()
         for edge, latency in latency_list.items():
@@ -70,10 +70,10 @@ class CustomScheduler(object):
                 node_names.add(edge)
         return [self.get_node_from_name(x) for x in node_names if x in available_nodes]
         
-    def nodes_available(self):
+    def nodes_available(self, iot_device_area):
         ready_nodes = []
         for n in self.v1.list_node().items:
-            for n.
+            if (n.metadata.labels['area'] == iot_device_area):
                 for status in n.status.conditions:
                     if status.status == "True" and status.type == "Ready":
                         ready_nodes.append(n.metadata.name)
@@ -116,8 +116,9 @@ class CustomScheduler(object):
             if old_memory_request >= new_memory_request:
                 old_service_name = next(x for x in old_pod.metadata.labels.keys() if 'app' in x)
                 old_required_delay = int(old_pod.metadata.labels['qos_latency'])
+                old_service_area = old_pod.metadata.labels['area']
                 old_nodes_in_radius = self.narrow_nodes_by_capacity(old_pod,
-                                                                    self.get_nodes_in_radius(old_service_name,
+                                                                    self.get_nodes_in_radius(old_service_name, old_service_area, 
                                                                                              old_required_delay))
                 old_placeholder = self.get_placeholder_by_pod(old_pod)
                 if len([x for x in old_nodes_in_radius if x.metadata.name != old_placeholder.node]) > 0:
@@ -230,10 +231,11 @@ class CustomScheduler(object):
         # New Pod request
             # Get the delay constraint value from the labels
             iot_device_servicename = pod.metadata.labels['app']
+            iot_device_area = pod.metadata.labels['area']
             required_delay = int(pod.metadata.labels['qos_latency'])
 
             # Getting all the nodes inside the delay radius
-            all_nodes_in_radius = self.get_nodes_in_radius(iot_device_servicename, required_delay)
+            all_nodes_in_radius = self.get_nodes_in_radius(iot_device_servicename, iot_device_area, required_delay)
             nodes_enough_resource_in_rad = self.narrow_nodes_by_capacity(pod, all_nodes_in_radius)
 
             # There is no node with available resource
