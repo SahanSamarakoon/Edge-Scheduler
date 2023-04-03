@@ -74,13 +74,13 @@ def get_ping_pod_IPs(ping_pods, pod_IPs):
     return pod_IPs
 
 def get_end_device_IPs():
-    end_device_IPs = {}
+    deployment_ip_mapping = {}
     ret = api.list_pod_for_all_namespaces(watch=False)
     for i in ret.items:
-        if "iot-service" in str(i.metadata.name):
-            end_device_IPs[i.metadata.name] = i.status.pod_ip
+        if "iot" in str(i.metadata.name):
+            deployment_ip_mapping[i.metadata.name] = '192.168.4.1'
 
-    return end_device_IPs
+    return deployment_ip_mapping
 
 def measure_latency(pod_from, end_device_IP):
     namespace = 'default'
@@ -125,11 +125,12 @@ def get_zone_label_of_node(node_name):
                 if "area" in label:
                         return label_value
 
-def get_zone_label_of_service(pod_name):
-    ret = api.list_pod_for_all_namespaces(watch=False)
-    for pod in ret.items:
-        if (str(pod.metadata.name) == pod_name):
-            for label,label_value in pod.metadata.labels.items():
+def get_zone_label_of_deployment(deployment_name):
+    kube_client = client.AppsV1Api()
+    ret = kube_client.list_namespaced_deployment(namespace="default")
+    for deployment in ret.items:
+        if (str(deployment.metadata.name) == deployment_name):
+            for label,label_value in deployment.metadata.labels.items():
                 if "area" in label:
                         return label_value
 
@@ -170,11 +171,12 @@ def do_labeling(node_name, labels):
         api_response = api_instance.patch_node(node_name, body)
 
 
-def do_measuring(end_device_IPs, pod_nodes_mapping):
-    permutations = list(itertools.product(list(end_device_IPs.keys()),list(pod_nodes_mapping.values())))
+def do_measuring(deployment_ip_mapping, pod_nodes_mapping):
+    permutations = list(itertools.product(list(deployment_ip_mapping.keys()),list(pod_nodes_mapping.values())))
     rtt_matrix = {i: {j:np.inf for (i, j) in permutations } for (i, j) in permutations}
     for i, j in permutations:
-        end_device_zone = get_zone_label_of_service(i)
+        deployment_name = i.split('-')[0]
+        end_device_zone = get_zone_label_of_deployment(i)
         edge_node_zone = get_zone_label_of_node(j)
         if (end_device_zone==edge_node_zone and rtt_matrix[i][j] == np.inf):
             for pod in pod_nodes_mapping:
@@ -182,13 +184,13 @@ def do_measuring(end_device_IPs, pod_nodes_mapping):
                     pod_name = pod
                     break
             print("\tMeasuring {} <-> {}".format(pod_name, i))
-            rtt_matrix[i][j] = measure_latency(pod_name, end_device_IPs[i])
+            rtt_matrix[i][j] = measure_latency(pod_name, deployment_ip_mapping[i])
     return rtt_matrix
 
 
 def labeling():
     nodes = get_worker_node_names()
-    ping_pod_list = ["ping-pod{}".format(i) for i in range(1, len(nodes) + 1)]
+    ping_pod_list = ["ping-podr{}".format(i) for i in range(1, len(nodes) + 1)]
     pod_nodes_mapping = {ping_pod_list[i]: nodes[i] for i in range(len(ping_pod_list))}
     pod_IPs = {ping_pod_list[i]: None for i in range(len(ping_pod_list))}
     pod_IPs = get_ping_pod_IPs(ping_pod_list, pod_IPs)
@@ -201,8 +203,8 @@ def labeling():
 
     # Measure latency
     # rtt_matrix = do_measuring(pod_IPs, ping_pod_list)
-    end_device_IPs = get_end_device_IPs()
-    rtt_matrix = do_measuring(end_device_IPs, pod_nodes_mapping)
+    deployment_ip_mapping = get_deployment_ip_mapping()
+    rtt_matrix = do_measuring(deployment_ip_mapping, pod_nodes_mapping)
 
     # Do labeling
     # for pod in ping_pod_list:
