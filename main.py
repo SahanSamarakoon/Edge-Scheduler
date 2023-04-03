@@ -4,7 +4,6 @@ import json
 import time
 import concurrent.futures
 from kubernetes.client.rest import ApiException
-import latency_labeler
 from kubernetes import client, watch
 from scheduler import CustomScheduler
 from handler import Handler
