@@ -13,7 +13,8 @@ import numpy as np
 class LatencyCalculator(object):
 
     def __init__(self):
-        self.api = core_v1_api.CoreV1Api()
+        self.load_config()
+        self.api = client.CoreV1Api()
         self.kube_client = client.AppsV1Api()
 
     @staticmethod
@@ -47,8 +48,6 @@ class LatencyCalculator(object):
     def deploy_rtt_deployment(self,pod_IPs, pod_node_mapping):
         for pod, pod_ip in pod_IPs.items():
             if pod_ip == None:
-                template = self.create_pod_template(pod, pod_node_mapping[pod])
-
                 api_instance = client.CoreV1Api()
                 namespace = 'default'
                 body = client.V1Pod(metadata=template.metadata, spec=template.spec)
@@ -97,7 +96,6 @@ class LatencyCalculator(object):
                     command=exec_command,
                     stderr=True, stdin=False,
                     stdout=True, tty=False)
-        print(resp)
         rtt_times = []
         for line in resp.split('\n'):
             if 'time=' in line:
@@ -181,7 +179,7 @@ class LatencyCalculator(object):
         rtt_matrix = {i: {j:np.inf for (i, j) in permutations } for (i, j) in permutations}
         for i, j in permutations:
             deployment_name = i.split('-')[0]
-            end_device_zone = self.get_zone_label_of_deployment(i)
+            end_device_zone = self.get_zone_label_of_deployment(deployment_name)
             edge_node_zone = self.get_zone_label_of_node(j)
             if (end_device_zone==edge_node_zone and rtt_matrix[i][j] == np.inf):
                 for pod in pod_nodes_mapping:
@@ -194,11 +192,13 @@ class LatencyCalculator(object):
 
 
     def labeling(self):
+        print("Start labeling...")
         nodes = self.get_worker_node_names()
         ping_pod_list = ["ping-pod{}".format(i) for i in range(1, len(nodes) + 1)]
         pod_nodes_mapping = {ping_pod_list[i]: nodes[i] for i in range(len(ping_pod_list))}
         pod_IPs = {ping_pod_list[i]: None for i in range(len(ping_pod_list))}
         pod_IPs = self.get_ping_pod_IPs(ping_pod_list, pod_IPs)
+        
 
         # Deploy latency measurement pods
         self.deploy_rtt_deployment(pod_IPs, pod_nodes_mapping)
@@ -210,7 +210,9 @@ class LatencyCalculator(object):
         # rtt_matrix = do_measuring(pod_IPs, ping_pod_list)
         deployment_ip_mapping = self.get_deployment_ip_mapping()
         rtt_matrix = self.do_measuring(deployment_ip_mapping, pod_nodes_mapping)
-
+        print("RTT MATRIX:")
+        print(rtt_matrix)
+        print("DONE")
         # Do labeling
         # for pod in ping_pod_list:
         #     labels = get_rtt_labels_of_node(pod, rtt_matrix, ping_pod_list, pod_nodes_mapping)

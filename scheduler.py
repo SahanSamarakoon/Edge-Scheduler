@@ -34,22 +34,9 @@ class CustomScheduler(object):
         elif 'Gi' in resource_string:
             return int(resource_string.split('G')[0])*(1024**3)
 
-    def update_latency_matrix(self):
-        with open('data.txt') as f:
-            lines=[line.strip() for line in f.readlines()]
-    
-        node_names = lines[0].split(",")
-        iot_services = lines[1].split(",")
-        new_latency_matrix = {}
-
-        for i, service in enumerate(iot_services):
-            temp_dict = {}
-            temp_ping_list = lines[i+2].split(",")
-            for j in range (len(node_names)):
-                temp_dict[node_names[j]] = int(temp_ping_list[j])
-            new_latency_matrix[service] = temp_dict
-        print("Scheduler Latency Matrix Updated")
-        self.latency_matrix=new_latency_matrix
+    def set_latency_matrix(self, new_latency_matrix):
+        self.latency_matrix = new_latency_matrix
+        print("Scheduler - Latency Matrix Updated")
 
     def get_pods_on_node(self, node_name, kube_system=False):
         if not kube_system:
@@ -60,24 +47,29 @@ class CustomScheduler(object):
     
     def get_node_from_name(self, node_name):
         return next(x for x in self.v1.list_node().items if x.metadata.name == node_name)
+    
+    def nodes_available(self, iot_device_area):
+        ready_nodes = []
+        nodes = [node for node in (self.v1.list_node(watch=False)).items if "master" != node.metadata.name]
+        for n in nodes:
+            if (n.metadata.labels['area'] == iot_device_area):
+                for status in n.status.conditions:
+                    if status.status == "True" and status.type == "Ready":
+                        ready_nodes.append(n.metadata.name)
+        return ready_nodes
 
-    def get_nodes_in_radius(self, iot_device_servicename, required_delay,):
-        available_nodes = self.nodes_available()
-        latency_list= self.latency_matrix.get(iot_device_servicename)
+    def get_nodes_in_radius(self, pod_name, iot_device_area, required_delay,):
+        available_nodes = self.nodes_available(iot_device_area)
+        latency_list = self.latency_matrix.get(pod_name)
+        if pod_name not in self.latency_matrix:
+            latency_list = {}
+            for node in available_nodes:
+                latency_list[str(node)]=0
         node_names = set()
         for edge, latency in latency_list.items():
             if latency <= required_delay:
                 node_names.add(edge)
         return [self.get_node_from_name(x) for x in node_names if x in available_nodes]
-        
-    def nodes_available(self):
-        ready_nodes = []
-        for n in self.v1.list_node().items:
-            for n.
-                for status in n.status.conditions:
-                    if status.status == "True" and status.type == "Ready":
-                        ready_nodes.append(n.metadata.name)
-        return ready_nodes
 
     def narrow_nodes_by_capacity(self, pod, node_list):
         return_list = []
@@ -116,8 +108,9 @@ class CustomScheduler(object):
             if old_memory_request >= new_memory_request:
                 old_service_name = next(x for x in old_pod.metadata.labels.keys() if 'app' in x)
                 old_required_delay = int(old_pod.metadata.labels['qos_latency'])
+                old_service_area = old_pod.metadata.labels['area']
                 old_nodes_in_radius = self.narrow_nodes_by_capacity(old_pod,
-                                                                    self.get_nodes_in_radius(old_service_name,
+                                                                    self.get_nodes_in_radius(old_service_name, old_service_area, 
                                                                                              old_required_delay))
                 old_placeholder = self.get_placeholder_by_pod(old_pod)
                 if len([x for x in old_nodes_in_radius if x.metadata.name != old_placeholder.node]) > 0:
@@ -149,7 +142,6 @@ class CustomScheduler(object):
         try:
             print("INFO Pod: %s placed on: %s" % (pod.metadata.name, node))
             api_response = self.v1.create_namespaced_pod_binding(name=pod.metadata.name, namespace=namespace, body=body)
-            print(api_response)
             return api_response
         except Exception as e:
             # print("Warning when calling CoreV1Api->create_namespaced_pod_binding: %s\n" % e)
@@ -229,11 +221,13 @@ class CustomScheduler(object):
     def new_pod(self, pod, namespace="default"):
         # New Pod request
             # Get the delay constraint value from the labels
+            
             iot_device_servicename = pod.metadata.labels['app']
+            iot_device_area = pod.metadata.labels['area']
             required_delay = int(pod.metadata.labels['qos_latency'])
 
             # Getting all the nodes inside the delay radius
-            all_nodes_in_radius = self.get_nodes_in_radius(iot_device_servicename, required_delay)
+            all_nodes_in_radius = self.get_nodes_in_radius(pod.metadata.name, iot_device_area, required_delay)
             nodes_enough_resource_in_rad = self.narrow_nodes_by_capacity(pod, all_nodes_in_radius)
 
             # There is no node with available resource
@@ -266,7 +260,7 @@ class CustomScheduler(object):
 
     def schedule(self, pod, namespace="default"):
         print("Scheduling Started ...")
-        self.update_latency_matrix()
+        # self.update_latency_matrix()
 
         if pod.metadata.name.split('-')[0] in self.rescedules.keys():
             print("Rescheduling Pod")
@@ -276,7 +270,6 @@ class CustomScheduler(object):
             return
 
         any_assigned_placeholder, placeholder = self.pod_has_placeholder(pod)
-        print(any_assigned_placeholder, placeholder)
         if any_assigned_placeholder:
             # Check for destroyed pods by destroyer
             if (self.check_destroyed(pod, placeholder.node)):
