@@ -129,11 +129,11 @@ class LatencyCalculator(object):
                     if "area" in label:
                             return label_value
 
-    def get_zone_label_of_deployment(self,deployment_name):
-        ret = self.kube_client.list_namespaced_deployment(namespace="default")
-        for deployment in ret.items:
-            if (str(deployment.metadata.name) == deployment_name):
-                for label,label_value in deployment.metadata.labels.items():
+    def get_zone_label_of_service(self,pod_name):
+        ret = api.list_pod_for_all_namespaces(watch=False)
+        for pod in ret.items:
+            if (str(pod.metadata.name) == pod_name):
+                for label,label_value in pod.metadata.labels.items():
                     if "area" in label:
                             return label_value
 
@@ -178,8 +178,8 @@ class LatencyCalculator(object):
         permutations = list(itertools.product(list(deployment_ip_mapping.keys()),list(pod_nodes_mapping.values())))
         rtt_matrix = {i: {j:np.inf for (i, j) in permutations } for (i, j) in permutations}
         for i, j in permutations:
-            deployment_name = i.split('-')[0]
-            end_device_zone = self.get_zone_label_of_deployment(deployment_name)
+            # deployment_name = i.split('-')[0]
+            end_device_zone = self.get_zone_label_of_service(i)
             edge_node_zone = self.get_zone_label_of_node(j)
             if (end_device_zone==edge_node_zone and rtt_matrix[i][j] == np.inf):
                 for pod in pod_nodes_mapping:
