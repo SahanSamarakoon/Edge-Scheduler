@@ -131,7 +131,6 @@ class LatencyCalculator(object):
 
     def get_zone_label_of_service(self,pod_name):
         ret = self.api.list_pod_for_all_namespaces(watch=False)
-        prin
         for pod in ret.items:
             if (str(pod.metadata.name) == pod_name):
                 for label,label_value in pod.metadata.labels.items():
