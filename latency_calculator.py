@@ -16,6 +16,7 @@ class LatencyCalculator(object):
         self.load_config()
         self.api = client.CoreV1Api()
         self.kube_client = client.AppsV1Api()
+        self.permutations = []
 
     @staticmethod
     def load_config():
@@ -175,9 +176,10 @@ class LatencyCalculator(object):
 
 
     def do_measuring(self,deployment_ip_mapping, pod_nodes_mapping):
-        permutations = list(itertools.product(list(deployment_ip_mapping.keys()),list(pod_nodes_mapping.values())))
-        rtt_matrix = {i: {j:np.inf for (i, j) in permutations } for (i, j) in permutations}
-        for i, j in permutations:
+        if (len(self.permutations)==0):
+            self.permutations = list(itertools.product(list(deployment_ip_mapping.keys()),list(pod_nodes_mapping.values())))
+        rtt_matrix = {i: {j:np.inf for (i, j) in self.permutations } for (i, j) in self.permutations}
+        for i, j in self.permutations:
             # deployment_name = i.split('-')[0]
             end_device_zone = self.get_zone_label_of_service(i)
             edge_node_zone = self.get_zone_label_of_node(j)
