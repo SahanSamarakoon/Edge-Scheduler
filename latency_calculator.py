@@ -48,6 +48,7 @@ class LatencyCalculator(object):
     def deploy_rtt_deployment(self,pod_IPs, pod_node_mapping):
         for pod, pod_ip in pod_IPs.items():
             if pod_ip == None:
+                template = self.create_pod_template(pod, pod_node_mapping[pod])
                 api_instance = client.CoreV1Api()
                 namespace = 'default'
                 body = client.V1Pod(metadata=template.metadata, spec=template.spec)
@@ -84,7 +85,6 @@ class LatencyCalculator(object):
         for i in ret.items:
             if "iot" in str(i.metadata.name):
                 deployment_ip_mapping[i.metadata.name] = '192.168.4.1'
-
         return deployment_ip_mapping
 
     def measure_latency(self,pod_from, end_device_IP):
@@ -186,19 +186,17 @@ class LatencyCalculator(object):
                     if pod_nodes_mapping[pod]==j:
                         pod_name = pod
                         break
-                print("\tMeasuring {} <-> {}".format(pod_name, i))
+                print("\tMeasuring {} <-> {}".format(pod_name, deployment_ip_mapping[i]))
                 rtt_matrix[i][j] = self.measure_latency(pod_name, deployment_ip_mapping[i])
         return rtt_matrix
 
 
     def labeling(self):
-        print("Start labeling...")
         nodes = self.get_worker_node_names()
         ping_pod_list = ["ping-pod{}".format(i) for i in range(1, len(nodes) + 1)]
         pod_nodes_mapping = {ping_pod_list[i]: nodes[i] for i in range(len(ping_pod_list))}
         pod_IPs = {ping_pod_list[i]: None for i in range(len(ping_pod_list))}
         pod_IPs = self.get_ping_pod_IPs(ping_pod_list, pod_IPs)
-        
 
         # Deploy latency measurement pods
         self.deploy_rtt_deployment(pod_IPs, pod_nodes_mapping)
