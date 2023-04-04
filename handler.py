@@ -24,6 +24,7 @@ class Handler(object):
 
     def set_latency_matrix(self, new_latency_matrix):
         self.latency_matrix = new_latency_matrix
+        print(self.latency_matrix)
         print("Handler - Latency Matrix Updated")
     
     def nodes_available(self):
