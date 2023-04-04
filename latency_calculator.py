@@ -16,6 +16,10 @@ class LatencyCalculator(object):
         self.load_config()
         self.api = client.CoreV1Api()
         self.kube_client = client.AppsV1Api()
+        self.nodes = []
+        self.ping_pod_list = []
+        self.pod_nodes_mapping = {}
+        self.pod_IPs = {}
         self.permutations = []
 
     @staticmethod
@@ -79,6 +83,14 @@ class LatencyCalculator(object):
                 pod_IPs[i.metadata.name] = i.status.pod_ip
 
         return pod_IPs
+    
+    def is_ping_pods_available(self):
+        ret = self.api.list_pod_for_all_namespaces(watch=False)
+        for i in ret.items:
+            print(i.metadata.name)
+            if "ping-pod" in str(i.metadata.name):
+                return True
+        return False
 
     def get_deployment_ip_mapping(self):
         deployment_ip_mapping = {}
@@ -194,29 +206,30 @@ class LatencyCalculator(object):
 
 
     def labeling(self):
-        nodes = self.get_worker_node_names()
-        ping_pod_list = ["ping-pod{}".format(i) for i in range(1, len(nodes) + 1)]
-        pod_nodes_mapping = {ping_pod_list[i]: nodes[i] for i in range(len(ping_pod_list))}
-        pod_IPs = {ping_pod_list[i]: None for i in range(len(ping_pod_list))}
-        pod_IPs = self.get_ping_pod_IPs(ping_pod_list, pod_IPs)
-
+        print(not self.is_ping_pods_available())
+        if (not self.is_ping_pods_available()):
+            self.nodes = self.get_worker_node_names()
+            self.ping_pod_list = ["ping-pod{}".format(i) for i in range(1, len(self.nodes) + 1)]
+            self.pod_nodes_mapping = {self.ping_pod_list[i]: self.nodes[i] for i in range(len(self.ping_pod_list))}
+            self.pod_IPs = {self.ping_pod_list[i]: None for i in range(len(self.ping_pod_list))}
+            self.pod_IPs = self.get_ping_pod_IPs(self.ping_pod_list, self.pod_IPs)
         # Deploy latency measurement pods
-        self.deploy_rtt_deployment(pod_IPs, pod_nodes_mapping)
-        self.check_rtt_deployment(ping_pod_list)
+        self.deploy_rtt_deployment(self.pod_IPs, self.pod_nodes_mapping)
+        self.check_rtt_deployment(self.ping_pod_list)
 
-        pod_IPs = self.get_ping_pod_IPs(ping_pod_list, pod_IPs)
+        self.pod_IPs = self.get_ping_pod_IPs(self.ping_pod_list, self.pod_IPs)
 
         # Measure latency
-        # rtt_matrix = do_measuring(pod_IPs, ping_pod_list)
+        # rtt_matrix = do_measuring(self.pod_IPs, self.ping_pod_list)
         deployment_ip_mapping = self.get_deployment_ip_mapping()
-        rtt_matrix = self.do_measuring(deployment_ip_mapping, pod_nodes_mapping)
+        rtt_matrix = self.do_measuring(deployment_ip_mapping, self.pod_nodes_mapping)
         print("RTT MATRIX:")
         print(rtt_matrix)
         print("DONE")
         # Do labeling
-        # for pod in ping_pod_list:
-        #     labels = get_rtt_labels_of_node(pod, rtt_matrix, ping_pod_list, pod_nodes_mapping)
-        #     do_labeling(pod_nodes_mapping[pod], labels)
+        # for pod in self.ping_pod_list:
+        #     labels = get_rtt_labels_of_node(pod, rtt_matrix, self.ping_pod_list, self.pod_nodes_mapping)
+        #     do_labeling(self.pod_nodes_mapping[pod], labels)
 
         return rtt_matrix
 
