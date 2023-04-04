@@ -96,7 +96,6 @@ class LatencyCalculator(object):
                     command=exec_command,
                     stderr=True, stdin=False,
                     stdout=True, tty=False)
-        print(resp)
         rtt_times = []
         for line in resp.split('\n'):
             if 'time=' in line:
@@ -180,7 +179,7 @@ class LatencyCalculator(object):
         rtt_matrix = {i: {j:np.inf for (i, j) in permutations } for (i, j) in permutations}
         for i, j in permutations:
             deployment_name = i.split('-')[0]
-            end_device_zone = self.get_zone_label_of_deployment(i)
+            end_device_zone = self.get_zone_label_of_deployment(deployment_name)
             edge_node_zone = self.get_zone_label_of_node(j)
             if (end_device_zone==edge_node_zone and rtt_matrix[i][j] == np.inf):
                 for pod in pod_nodes_mapping:

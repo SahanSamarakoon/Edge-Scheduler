@@ -6,14 +6,14 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      app: iot_service_01
+      app: iotservice01
   template:
     metadata:
       name: iotservice01
       labels:
-        app: iot_service_01
+        app: iotservice01
         area: zone1
-        qos_latency: "18"
+        qos_latency: "100"
     spec:
       containers:
         - name: iotservice1pod1-container
@@ -21,9 +21,9 @@ spec:
           imagePullPolicy: Never
           resources:
             limits:
-              memory: "1Gi"
+              memory: "512Mi"
             requests:
-              memory: "1Gi"
+              memory: "512Mi"
           command:
             - /sbin/init
       schedulerName: custom-scheduler
