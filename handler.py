@@ -43,14 +43,17 @@ class Handler(object):
 
     def check_pod(self, pod, node):
         print("Handler - Checking Latency between pod and node")
-        iot_device_servicename = pod.metadata.labels['app']
-        if pod.metaname.name not in latency_matrix:
+        print(pod.metadata.name, node)
+        if pod.metadata.name not in self.latency_matrix:
+            print("Handler - No Violations")
             return False
         else:    
-            latency = int(self.latency_matrix.get(pod.metaname.name).get(node))
+            latency = int(self.latency_matrix.get(pod.metadata.name).get(node))
         required_delay = int(pod.metadata.labels['qos_latency'])
+        print(latency, required_delay)
         if latency >= required_delay:
             return True
+        print("Handler - No Violations")
         return False
 
     def check_violations(self):
