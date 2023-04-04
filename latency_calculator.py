@@ -87,7 +87,6 @@ class LatencyCalculator(object):
     def is_ping_pods_available(self):
         ret = self.api.list_pod_for_all_namespaces(watch=False)
         for i in ret.items:
-            print(i.metadata.name)
             if "ping-pod" in str(i.metadata.name):
                 return True
         return False
@@ -206,7 +205,6 @@ class LatencyCalculator(object):
 
 
     def labeling(self):
-        print(not self.is_ping_pods_available())
         if (not self.is_ping_pods_available()):
             self.nodes = self.get_worker_node_names()
             self.ping_pod_list = ["ping-pod{}".format(i) for i in range(1, len(self.nodes) + 1)]
@@ -225,7 +223,6 @@ class LatencyCalculator(object):
         rtt_matrix = self.do_measuring(deployment_ip_mapping, self.pod_nodes_mapping)
         print("RTT MATRIX:")
         print(rtt_matrix)
-        print("DONE")
         # Do labeling
         # for pod in self.ping_pod_list:
         #     labels = get_rtt_labels_of_node(pod, rtt_matrix, self.ping_pod_list, self.pod_nodes_mapping)
