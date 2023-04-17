@@ -16,10 +16,10 @@ class LatencyCalculator(object):
         self.load_config()
         self.api = client.CoreV1Api()
         self.kube_client = client.AppsV1Api()
-        self.nodes = []
-        self.ping_pod_list = []
-        self.pod_nodes_mapping = {}
-        self.pod_IPs = {}
+        self.nodes = self.get_worker_node_names()
+        self.ping_pod_list = ["ping-pod{}".format(i) for i in range(1, len(self.nodes) + 1)]
+        self.pod_nodes_mapping = {self.ping_pod_list[i]: self.nodes[i] for i in range(len(self.ping_pod_list))}
+        self.pod_IPs = {self.ping_pod_list[i]: None for i in range(len(self.ping_pod_list))}
         self.permutations = []
 
     @staticmethod
@@ -31,7 +31,14 @@ class LatencyCalculator(object):
             config.load_incluster_config()
 
     def get_worker_node_names(self):
-        return [node.metadata.name for node in (self.api.list_node(watch=False)).items if "master" != node.metadata.name]
+        worker_nodes = []
+        for node in (self.api.list_node(watch=False)).items:
+            if "master" != node.metadata.name:
+                worker_nodes.append(node.metadata.name)
+        print("--- {} worker nodes found.".format(str(len(worker_nodes))))
+        print(worker_nodes)
+        worker_nodes.sort()
+        return worker_nodes
 
 
     def create_pod_template(self,pod_name, node_name):
@@ -46,7 +53,7 @@ class LatencyCalculator(object):
         template = client.V1PodTemplateSpec(
             metadata=client.V1ObjectMeta(name=pod_name),
             spec=client.V1PodSpec(containers=[container], node_selector={"kubernetes.io/hostname": node_name}))
-
+        print("--- Pod template created")
         return template
 
 
@@ -58,6 +65,7 @@ class LatencyCalculator(object):
                 namespace = 'default'
                 body = client.V1Pod(metadata=template.metadata, spec=template.spec)
                 api_response = api_instance.create_namespaced_pod(namespace, body)
+                print("--- {} is deployed in {}".format(str(pod),str(pod_node_mapping[pod])))
 
 
     def check_rtt_deployment(self,ping_pods):
@@ -88,7 +96,9 @@ class LatencyCalculator(object):
         ret = self.api.list_pod_for_all_namespaces(watch=False)
         for i in ret.items:
             if "ping-pod" in str(i.metadata.name):
+                print("--- --- Ping pods are already deployed")
                 return True
+        print("--- --- Ping pods cannot be found")
         return False
 
     def get_deployment_ip_mapping(self):
@@ -96,7 +106,8 @@ class LatencyCalculator(object):
         ret = self.api.list_pod_for_all_namespaces(watch=False)
         for i in ret.items:
             if "iot" in str(i.metadata.name):
-                deployment_ip_mapping[i.metadata.name] = '192.168.4.1'
+                # deployment_ip_mapping[i.metadata.name] = '192.168.4.1'
+                deployment_ip_mapping[i.metadata.name] = i.status.pod_ip
         return deployment_ip_mapping
 
     def measure_latency(self,pod_from, end_device_IP):
@@ -204,13 +215,10 @@ class LatencyCalculator(object):
         return rtt_matrix
 
 
-    def labeling(self):
-        if (not self.is_ping_pods_available()):
-            self.nodes = self.get_worker_node_names()
-            self.ping_pod_list = ["ping-pod{}".format(i) for i in range(1, len(self.nodes) + 1)]
-            self.pod_nodes_mapping = {self.ping_pod_list[i]: self.nodes[i] for i in range(len(self.ping_pod_list))}
-            self.pod_IPs = {self.ping_pod_list[i]: None for i in range(len(self.ping_pod_list))}
-            self.pod_IPs = self.get_ping_pod_IPs(self.ping_pod_list, self.pod_IPs)
+    def generate_latency_matrix(self):
+        print("--- --- Start generating latency matrix")
+        self.pod_IPs = self.get_ping_pod_IPs(self.ping_pod_list, self.pod_IPs)
+        
         # Deploy latency measurement pods
         self.deploy_rtt_deployment(self.pod_IPs, self.pod_nodes_mapping)
         self.check_rtt_deployment(self.ping_pod_list)
@@ -218,28 +226,12 @@ class LatencyCalculator(object):
         self.pod_IPs = self.get_ping_pod_IPs(self.ping_pod_list, self.pod_IPs)
 
         # Measure latency
-        # rtt_matrix = do_measuring(self.pod_IPs, self.ping_pod_list)
         deployment_ip_mapping = self.get_deployment_ip_mapping()
         rtt_matrix = self.do_measuring(deployment_ip_mapping, self.pod_nodes_mapping)
         print("RTT MATRIX:")
         print(rtt_matrix)
-        # Do labeling
-        # for pod in self.ping_pod_list:
-        #     labels = get_rtt_labels_of_node(pod, rtt_matrix, self.ping_pod_list, self.pod_nodes_mapping)
-        #     do_labeling(self.pod_nodes_mapping[pod], labels)
 
         return rtt_matrix
-
-    # def main(self):
-    #     print("Start labeling...")
-    #     rtt_matrix = labeling()
-    #     print("RTT MATRIX:")
-    #     print(rtt_matrix)
-    #     print("DONE")
-
-
-    # if __name__ == '__main__':
-    #     main()
 
     # To create IoT Service Pods:
     # kubectl create deployment iot-service --image=busybox --replicas=2 -- sleep infinity
