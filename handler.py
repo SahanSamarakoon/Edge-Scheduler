@@ -37,20 +37,21 @@ class Handler(object):
     def get_pods_on_node(self, node_name, kube_system=False):
         if not kube_system:
             return [x for x in self.v1.list_pod_for_all_namespaces(watch=False).items if
-                    (x.metadata.namespace != 'kube-system' and x.metadata.namespace != 'kubernetes-dashboard') and x.spec.node_name == node_name]
+                    (x.metadata.namespace != 'kube-system' and x.metadata.namespace != 'kubernetes-dashboard') and x.spec.node_name == node_name and "ping-pod" not in x.metadata.name]
         else:
             return [x for x in self.v1.list_pod_for_all_namespaces(watch=False).items if x.spec.node_name == node_name]
 
     def check_pod(self, pod, node):
         print("Handler - Checking Latency between pod and node")
-        iot_device_servicename = pod.metadata.labels['app']
-        if pod.metaname.name not in latency_matrix:
+        if pod.metadata.name not in self.latency_matrix:
+            print("Handler - No Violations")
             return False
         else:    
-            latency = int(self.latency_matrix.get(pod.metaname.name).get(node))
+            latency = int(self.latency_matrix.get(pod.metadata.name).get(node))
         required_delay = int(pod.metadata.labels['qos_latency'])
         if latency >= required_delay:
             return True
+        print("Handler - No Violations")
         return False
 
     def check_violations(self):
