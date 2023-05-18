@@ -18,7 +18,7 @@ spec:
       containers:
         - name: iotservice1pod1-container
           image: tempdecal/odmv3:2.6.0
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           resources:
             limits:
               memory: "512Mi"
