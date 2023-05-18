@@ -106,8 +106,8 @@ class LatencyCalculator(object):
         ret = self.api.list_pod_for_all_namespaces(watch=False)
         for i in ret.items:
             if "iot" in str(i.metadata.name):
-                # deployment_ip_mapping[i.metadata.name] = '192.168.4.1'
-                deployment_ip_mapping[i.metadata.name] = i.status.pod_ip
+                deployment_ip_mapping[i.metadata.name] = '192.168.190.85'
+                # deployment_ip_mapping[i.metadata.name] = i.status.pod_ip
         return deployment_ip_mapping
 
     def measure_latency(self,pod_from, end_device_IP):
