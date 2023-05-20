@@ -45,7 +45,7 @@ class BandwidthCalculator(object):
         # Configureate Pod template container
         container = client.V1Container(
             name=pod_name,
-            image='nishanjay98/bandwidth-monitor',
+            image='nishanjay98/bandwidth-monitor:1.0.0',
             command=['sleep','infinity'],
             image_pull_policy='IfNotPresent')
 
@@ -104,7 +104,7 @@ class BandwidthCalculator(object):
     def measure_bandwidth(self,pod_from, end_device_IP):
         namespace = 'default'
 
-        exec_command = ['/bin/sh', '-c', 'python main.py']
+        exec_command = ['/bin/sh', '-c', 'python main.py --url "http://10.10.49.224:6677/videofeed?username=\&password=" --count 15']
 
         resp = stream(self.api.connect_get_namespaced_pod_exec, pod_from, namespace,
                     command=exec_command,
@@ -113,7 +113,6 @@ class BandwidthCalculator(object):
         bandwidth_measurements = []
         for line in resp.split('\n'):
                 if(line!=""):
-                    print(line)
                     bandwidth = float(line)
                     bandwidth_measurements.append(bandwidth)
         np_rtt_times = np.array(bandwidth_measurements)
@@ -178,3 +177,6 @@ class BandwidthCalculator(object):
 
     # To check pod ips
     # kubectl get pods --output=wide
+
+    # command to run python file
+    # python main.py --url "http://192.168.219.185:6677/videofeed?username=\&password=" --count 15
