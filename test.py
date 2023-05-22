@@ -1,7 +1,23 @@
-# available_nodes = ['master', 'master-m02', 'master-m03', 'master-m04']
-# print(available_nodes)
-# for node in available_nodes:
-#     print(node.metadata.name)
+import yaml
 
-name = "iotservice01-68968b8b95-tskzv"
-print(name.split("-")[0])
+with open('config.yaml') as f:
+    data = yaml.safe_load(f)
+    priority=data.get("priority")
+    matrix_first = list(priority.keys())[0]
+    matrix_second = list(priority.keys())[1]
+    m_test = "hi" if list(priority.keys())[1]=="latency" else "bye"
+    print(m_test)
+
+# for key,values in priority.items():
+#     print(key)
+#     print("Handler - Checking", key ,"between pod and node")
+#     match key:
+#                 case "latency":
+#                     print("It's Monday!")
+#                 case "bandwith":
+#                     print("It's tuesday!")
+#     values = values.split(",")
+#     for value in values:
+#         print(value)
+#     # for subkey in key():
+#     #     print(subkey)

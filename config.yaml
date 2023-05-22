@@ -1,0 +1,9 @@
+priority:
+  latency: migration,ota
+  bandwidth: migration,config_update
+config_update:
+  highest: config_high
+  normal: config
+  lowest: config_low
+ota:
+  rollback: backup

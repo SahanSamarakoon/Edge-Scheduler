@@ -2,10 +2,10 @@
 
 import time
 import random
-import json
-from kubernetes.client.rest import ApiException
+import yaml
 from kubernetes import client, config
 from placeholder import Placeholder
+
 
 class CustomScheduler(object):
 
@@ -16,11 +16,15 @@ class CustomScheduler(object):
         self.placeholders = []
         self.rescedules = dict()
         self.latency_matrix = dict()
+        self.bandwidth_matrix = dict()
+        self.configs = ""
 
     @staticmethod
-    def load_config():
+    def load_config(self):
         try:
             config.load_kube_config()
+            with open('config.yaml') as f:
+                self.configs = yaml.safe_load(f)
         except FileNotFoundError as e:
             # print("WARNING %s\n" % e)
             config.load_incluster_config()
@@ -28,15 +32,19 @@ class CustomScheduler(object):
     @staticmethod
     def convert_to_int(resource_string):
         if 'Ki' in resource_string:
-            return int(resource_string.split('K')[0])*1024
+            return int(resource_string.split('K')[0]) * 1024
         elif 'Mi' in resource_string:
-            return int(resource_string.split('M')[0])*(1024**2)
+            return int(resource_string.split('M')[0]) * (1024 ** 2)
         elif 'Gi' in resource_string:
-            return int(resource_string.split('G')[0])*(1024**3)
+            return int(resource_string.split('G')[0]) * (1024 ** 3)
 
     def set_latency_matrix(self, new_latency_matrix):
         self.latency_matrix = new_latency_matrix
         print("Scheduler - Latency Matrix Updated")
+
+    def set_bandwidth_matrix(self, new_bandwidth_matrix):
+        self.bandwidth_matrix = new_bandwidth_matrix
+        print("Scheduler - Bandwidth Matrix Updated")
 
     def get_pods_on_node(self, node_name, kube_system=False):
         if not kube_system:
@@ -44,31 +52,60 @@ class CustomScheduler(object):
                     x.metadata.namespace != 'kube-system' and x.spec.node_name == node_name]
         else:
             return [x for x in self.v1.list_pod_for_all_namespaces(watch=False).items if x.spec.node_name == node_name]
-    
+
     def get_node_from_name(self, node_name):
         return next(x for x in self.v1.list_node().items if x.metadata.name == node_name)
-    
+
     def nodes_available(self, iot_device_area):
         ready_nodes = []
         nodes = [node for node in (self.v1.list_node(watch=False)).items if "master" != node.metadata.name]
         for n in nodes:
-            if (n.metadata.labels['area'] == iot_device_area):
+            if n.metadata.labels['area'] == iot_device_area:
                 for status in n.status.conditions:
                     if status.status == "True" and status.type == "Ready":
                         ready_nodes.append(n.metadata.name)
         return ready_nodes
 
-    def get_nodes_in_radius(self, pod_name, iot_device_area, required_delay,):
+    def get_nodes_in_radius(self, pod_name, iot_device_area, required_delay, required_bandwidth):
         available_nodes = self.nodes_available(iot_device_area)
         latency_list = self.latency_matrix.get(pod_name)
+        bandwidth_list = self.bandwidth_matrix.get(pod_name)
+
         if pod_name not in self.latency_matrix:
             latency_list = {}
             for node in available_nodes:
-                latency_list[str(node)]=0
-        node_names = set()
-        for edge, latency in latency_list.items():
-            if latency <= required_delay:
-                node_names.add(edge)
+                latency_list[str(node)] = 0
+
+        if pod_name not in self.bandwidth_matrix:
+            bandwidth_list = {}
+            for node in available_nodes:
+                bandwidth_list[str(node)] = 1000
+
+        priority = self.configs.get("priority")
+        matrix_first = latency_list if list(priority.keys())[0] == "latency" else bandwidth_list
+        matrix_second = bandwidth_list if list(priority.keys())[1] == "bandwidth" else latency_list
+
+        node_names_first = set()
+        for edge, status in matrix_first.items():
+            requirement = required_delay if list(priority.keys())[0] == "latency" else required_bandwidth
+            if status <= requirement:
+                node_names_first.add(edge)
+
+        node_names_second = set()
+        for edge, status in matrix_second.items():
+            requirement = required_delay if list(priority.keys())[0] == "latency" else required_bandwidth
+            if status <= requirement:
+                node_names_second.add(edge)
+
+        # Find common nodes
+        common_nodes = node_names_first.intersection(node_names_second)
+
+        # Return common nodes if they exist, else return nodes from matrix_first
+        if common_nodes:
+            node_names = common_nodes
+        else:
+            return node_names_first
+
         return [self.get_node_from_name(x) for x in node_names if x in available_nodes]
 
     def narrow_nodes_by_capacity(self, pod, node_list):
@@ -77,7 +114,7 @@ class CustomScheduler(object):
             if self.calculate_available_memory(n) > self.get_pod_memory_request(pod):
                 return_list.append(n)
         return return_list
-    
+
     def calculate_available_memory(self, node):
         pods_on_node = self.get_pods_on_node(node.metadata.name)
         sum_reserved_memory = sum([self.get_pod_memory_request(y) for y in pods_on_node])
@@ -96,7 +133,7 @@ class CustomScheduler(object):
                 self.do_reschedule(old_pod, reschedule_node)
                 return old_pod.metadata.name
         return None
-    
+
     def get_pod_memory_request(self, pod):
         return sum([self.convert_to_int(x.resources.requests['memory']) for x in pod.spec.containers if
                     x.resources.requests is not None])
@@ -108,14 +145,17 @@ class CustomScheduler(object):
             if old_memory_request >= new_memory_request:
                 old_service_name = next(x for x in old_pod.metadata.labels.keys() if 'app' in x)
                 old_required_delay = int(old_pod.metadata.labels['qos_latency'])
+                old_required_bandwidth = int(old_pod.metadata.labels['qos_bandwidth'])
                 old_service_area = old_pod.metadata.labels['area']
                 old_nodes_in_radius = self.narrow_nodes_by_capacity(old_pod,
-                                                                    self.get_nodes_in_radius(old_service_name, old_service_area, 
-                                                                                             old_required_delay))
+                                                                    self.get_nodes_in_radius(old_service_name,
+                                                                                             old_service_area,
+                                                                                             old_required_delay,
+                                                                                             old_required_bandwidth))
                 old_placeholder = self.get_placeholder_by_pod(old_pod)
                 if len([x for x in old_nodes_in_radius if x.metadata.name != old_placeholder.node]) > 0:
                     return True, old_pod, \
-                           random.choice([x for x in old_nodes_in_radius if x.metadata.name != old_placeholder.node])
+                        random.choice([x for x in old_nodes_in_radius if x.metadata.name != old_placeholder.node])
         return False, None, None
 
     def get_placeholder_by_pod(self, pod):
@@ -146,6 +186,15 @@ class CustomScheduler(object):
         except Exception as e:
             # print("Warning when calling CoreV1Api->create_namespaced_pod_binding: %s\n" % e)
             pass
+
+    def reused_placeholder_used_pod_node(self, placeholder, pod, nodes_enough_resource):
+        placeholder_memory_matrix = self.get_memory_matrix(placeholder, nodes_enough_resource)
+        if any(placeholder_memory_matrix[x] + self.get_pod_memory_request(pod) <= placeholder.required_memory
+               for x in placeholder_memory_matrix.keys()):
+            return True, next(x for x in nodes_enough_resource if x.metadata.name in placeholder_memory_matrix.keys()
+                              and placeholder_memory_matrix[x.metadata.name] +
+                              self.get_pod_memory_request(pod) <= placeholder.required_memory)
+        return False, None
 
     def assign_placeholder(self, pod, nodes_less_resource, nodes_enough_resource):
 
@@ -184,13 +233,20 @@ class CustomScheduler(object):
                 placeholders_in_rad.append(placeholder)
         return placeholders_in_rad
 
+    def get_node_from_podname_or_nodename(self, previous_element_name):
+        if previous_element_name in [x.metadata.name for x in self.v1.list_node().items]:
+            return self.get_node_from_name(previous_element_name)
+        else:
+            return self.get_node_from_name(next(x for x in self.v1.list_pod_for_all_namespaces(watch=False).items if
+                                                previous_element_name in x.metadata.name).spec.node_name)
+
     def reused_placeholder_unused_pod_node(self, placeholder, nodes_enough_resource):
         covered_nodes = [self.get_node_from_podname_or_nodename(x) for x in placeholder.pods]
         covered_node_names = [y.metadata.name for y in covered_nodes]
-        if any(x.metadata.name not in covered_node_names+[placeholder.node] for x in nodes_enough_resource):
-            return True, covered_node_names+[placeholder.node]
+        if any(x.metadata.name not in covered_node_names + [placeholder.node] for x in nodes_enough_resource):
+            return True, covered_node_names + [placeholder.node]
         return False, None
-    
+
     def add_pod_to_placeholder(self, pod, placeholder, extra_memory=0):
         placeholder.pods.add(pod.metadata.name.split('-')[0])
         placeholder.required_memory += extra_memory
@@ -203,60 +259,67 @@ class CustomScheduler(object):
         self.placeholders.append(placeholder)
         return placeholder
 
-    def check_destroyed(pod, node):
+    def check_destroyed(self, pod, node):
         iot_device_servicename = pod.metadata.labels['app']
-        latency = int(latency_matrix.get(iot_device_servicename).get(node.metadata.name))
+        latency = int(self.latency_matrix.get(iot_device_servicename).get(node.metadata.name))
+        bandwidth = int(self.bandwidth_matrix.get(iot_device_servicename).get(node.metadata.name))
         required_delay = int(pod.metadata.labels['qos_latency'])
+        required_bandwidth = int(pod.metadata.labels['qos_bandwidth'])
         if latency <= required_delay:
-                return True
+            return True
+        if bandwidth <= required_bandwidth:
+            return True
         return False
-    
+
     def pod_has_placeholder(self, pod):
         try:
             # FIXME: '-' character assumed as splitting character
             return True, next(ph for ph in self.placeholders if pod.metadata.name.split('-')[0] in ph.pods)
         except StopIteration:
             return False, None
-    
+
     def new_pod(self, pod, namespace="default"):
         # New Pod request
-            # Get the delay constraint value from the labels
-            
-            iot_device_servicename = pod.metadata.labels['app']
-            iot_device_area = pod.metadata.labels['area']
-            required_delay = int(pod.metadata.labels['qos_latency'])
+        # Get the delay constraint value from the labels
 
-            # Getting all the nodes inside the delay radius
-            all_nodes_in_radius = self.get_nodes_in_radius(pod.metadata.name, iot_device_area, required_delay)
+        iot_device_area = pod.metadata.labels['area']
+        required_delay = int(pod.metadata.labels['qos_latency'])
+        required_bandwidth = int(pod.metadata.labels['qos_bandwidth'])
+
+        # Getting all the nodes inside the delay radius
+        all_nodes_in_radius = self.get_nodes_in_radius(pod.metadata.name, iot_device_area, required_delay,
+                                                       required_bandwidth)
+        nodes_enough_resource_in_rad = self.narrow_nodes_by_capacity(pod, all_nodes_in_radius)
+
+        # There is no node with available resource
+        if len(nodes_enough_resource_in_rad) == 0:
+
+            # Try to reschedule some previously deployed Pod
+            old_pod_name = self.reschedule_pod(pod, all_nodes_in_radius)
+            # We have to wait, while the pod get successfully rescheduled
+            if old_pod_name is not None:
+                # FIXME: '-' character assumed as splitting character
+                # FIXME: We are waiting till only 1 instance remain. There can be more on purpose!
+                time.sleep(5)
+                print("INFO Waiting for rescheduling.", end="")
+                while len([x.metadata.name for x in self.get_all_pods() if
+                           old_pod_name.split('-')[0] in x.metadata.name]) > 1:
+                    print(".", end="")
+                    time.sleep(2)
+                print("\n")
+
+            # Recalculate the nodes with the computational resources
             nodes_enough_resource_in_rad = self.narrow_nodes_by_capacity(pod, all_nodes_in_radius)
-
-            # There is no node with available resource
-            if len(nodes_enough_resource_in_rad) == 0:
-                
-                # Try to reschedule some previously deployed Pod
-                old_pod_name = self.reschedule_pod(pod, all_nodes_in_radius)
-                # We have to wait, while the pod get successfully rescheduled
-                if old_pod_name is not None:
-                    # FIXME: '-' character assumed as splitting character
-                    # FIXME: We are waiting till only 1 instance remain. There can be more on purpose!
-                    time.sleep(5)
-                    print("INFO Waiting for rescheduling.", end="")
-                    while len([x.metadata.name for x in self.get_all_pods() if old_pod_name.split('-')[0] in x.metadata.name]) > 1:
-                        print(".", end="")
-                        time.sleep(2)
-                    print("\n")
-
-                # Recalculate the nodes with the computational resources
-                nodes_enough_resource_in_rad = self.narrow_nodes_by_capacity(pod, all_nodes_in_radius)
-            if len(all_nodes_in_radius) > 1:
-                nodes_enough_resource_in_rad = self.assign_placeholder(
-                    pod, [x for x in all_nodes_in_radius if x not in nodes_enough_resource_in_rad], nodes_enough_resource_in_rad)
-                for ph in self.placeholders:
-                        print("INFO Placeholder on node: %s ;assigned Pods: %s" % (ph.node, str(ph.pods)))
-            elif len(all_nodes_in_radius) == 1:
-                print("WARNING No placeholder will be assigned to this Pod!")
-            node = nodes_enough_resource_in_rad[0]
-            self.bind(pod, node.metadata.name, namespace)
+        if len(all_nodes_in_radius) > 1:
+            nodes_enough_resource_in_rad = self.assign_placeholder(
+                pod, [x for x in all_nodes_in_radius if x not in nodes_enough_resource_in_rad],
+                nodes_enough_resource_in_rad)
+            for ph in self.placeholders:
+                print("INFO Placeholder on node: %s ;assigned Pods: %s" % (ph.node, str(ph.pods)))
+        elif len(all_nodes_in_radius) == 1:
+            print("WARNING No placeholder will be assigned to this Pod!")
+        node = nodes_enough_resource_in_rad[0]
+        self.bind(pod, node.metadata.name, namespace)
 
     def schedule(self, pod, namespace="default"):
         print("Scheduling Started ...")
@@ -277,7 +340,8 @@ class CustomScheduler(object):
                 self.placeholders.remove(placeholder)
                 self.new_pod(pod)
             else:
-                # The Pod has already an assigned placeholder so probably a node failure occurred, we need to restart the pod
+                # The Pod has already an assigned placeholder so probably a node failure occurred, we need to restart
+                # the pod
                 print("Placeholder Pod Detected")
                 self.patch_pod(pod, placeholder.node)
         else:

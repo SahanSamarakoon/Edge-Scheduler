@@ -14,10 +14,11 @@ spec:
         app: iotservice01
         area: zone1
         qos_latency: "100"
+        qos_bandwidth: "10"
     spec:
       containers:
         - name: iotservice1pod1-container
-          image: tempdecal/odmv3:2.6.0
+          image: tempdecal/odmv3:2.8.0
           imagePullPolicy: IfNotPresent
           resources:
             limits:
