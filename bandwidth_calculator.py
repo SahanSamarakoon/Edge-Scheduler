@@ -10,16 +10,16 @@ import time
 import itertools
 import numpy as np
 
-class LatencyCalculator(object):
+class BandwidthCalculator(object):
 
     def __init__(self):
         self.load_config()
         self.api = client.CoreV1Api()
         self.kube_client = client.AppsV1Api()
         self.nodes = self.get_worker_node_names()
-        self.ping_pod_list = ["ping-pod{}".format(i) for i in range(1, len(self.nodes) + 1)]
-        self.pod_nodes_mapping = {self.ping_pod_list[i]: self.nodes[i] for i in range(len(self.ping_pod_list))}
-        self.pod_IPs = {self.ping_pod_list[i]: None for i in range(len(self.ping_pod_list))}
+        self.bandwidth_pod_list = ["bandwidth-pod{}".format(i) for i in range(1, len(self.nodes) + 1)]
+        self.pod_nodes_mapping = {self.bandwidth_pod_list[i]: self.nodes[i] for i in range(len(self.bandwidth_pod_list))}
+        self.pod_IPs = {self.bandwidth_pod_list[i]: None for i in range(len(self.bandwidth_pod_list))}
         self.permutations = []
 
     @staticmethod
@@ -45,7 +45,7 @@ class LatencyCalculator(object):
         # Configureate Pod template container
         container = client.V1Container(
             name=pod_name,
-            image='busybox',
+            image='nishanjay98/bandwidth-monitor',
             command=['sleep','infinity'],
             image_pull_policy='IfNotPresent')
 
@@ -57,7 +57,7 @@ class LatencyCalculator(object):
         return template
 
 
-    def deploy_rtt_deployment(self,pod_IPs, pod_node_mapping):
+    def deploy(self,pod_IPs, pod_node_mapping):
         for pod, pod_ip in pod_IPs.items():
             if pod_ip == None:
                 template = self.create_pod_template(pod, pod_node_mapping[pod])
@@ -68,8 +68,8 @@ class LatencyCalculator(object):
                 print("--- {} is deployed in {}".format(str(pod),str(pod_node_mapping[pod])))
 
 
-    def check_rtt_deployment(self,ping_pods):
-        for pod in ping_pods:
+    def check_deployment(self,bandwidth_pods):
+        for pod in bandwidth_pods:
             running = False
             time_out = 120
             cur_time = 0
@@ -84,22 +84,13 @@ class LatencyCalculator(object):
                 raise Exception("TIMEOUT: Pod {} is not running".format(pod))
 
 
-    def get_ping_pod_IPs(self,ping_pods, pod_IPs):
+    def get_bandwidth_pod_IPs(self,ping_pods, pod_IPs):
         ret = self.api.list_pod_for_all_namespaces(watch=False)
         for i in ret.items:
             if str(i.metadata.name) in ping_pods:
                 pod_IPs[i.metadata.name] = i.status.pod_ip
 
         return pod_IPs
-    
-    def is_ping_pods_available(self):
-        ret = self.api.list_pod_for_all_namespaces(watch=False)
-        for i in ret.items:
-            if "ping-pod" in str(i.metadata.name):
-                print("--- --- Ping pods are already deployed")
-                return True
-        print("--- --- Ping pods cannot be found")
-        return False
 
     def get_deployment_ip_mapping(self):
         deployment_ip_mapping = {}
@@ -110,39 +101,24 @@ class LatencyCalculator(object):
                 # deployment_ip_mapping[i.metadata.name] = i.status.pod_ip
         return deployment_ip_mapping
 
-    def measure_latency(self,pod_from, end_device_IP):
+    def measure_bandwidth(self,pod_from, end_device_IP):
         namespace = 'default'
 
-        exec_command = ['/bin/sh', '-c', 'ping -c 10 {}'.format(end_device_IP)]
+        exec_command = ['/bin/sh', '-c', 'python main.py']
 
         resp = stream(self.api.connect_get_namespaced_pod_exec, pod_from, namespace,
                     command=exec_command,
                     stderr=True, stdin=False,
                     stdout=True, tty=False)
-        rtt_times = []
+        bandwidth_measurements = []
         for line in resp.split('\n'):
-            if 'time=' in line:
-                rtt_time = float(line.split('=')[-1][:-3])
-                rtt_times.append(rtt_time)
-        np_rtt_times = np.array(rtt_times)
+                if(line!=""):
+                    print(line)
+                    bandwidth = float(line)
+                    bandwidth_measurements.append(bandwidth)
+        np_rtt_times = np.array(bandwidth_measurements)
         rtt_value = np.percentile(np_rtt_times, 95)
         return rtt_value
-
-
-    def get_rtt_labels_of_node(self,node, rtt_matrix, ping_pods, POD_NODES_MAP):
-        # FIXME: Currently we handle RTTs in millisec
-        rtt_list = {}
-
-        for i in ping_pods:
-            if i != node:
-                rtt = rtt_matrix[(node, i)]
-                rtt_ms = int(round(rtt))
-                try:
-                    rtt_list["rtt-{}".format(rtt_ms)].append(POD_NODES_MAP[i])
-                except:
-                    rtt_list["rtt-{}".format(rtt_ms)] = [POD_NODES_MAP[i]]
-
-        return rtt_list
 
     def get_zone_label_of_node(self,node_name):
         ret = self.api.list_node(watch=False)
@@ -160,42 +136,6 @@ class LatencyCalculator(object):
                     if "area" in label:
                             return label_value
 
-    def do_labeling(self,node_name, labels):
-        # FIXME: This method could be stucked into a unvalid state: if we already delete the old rtt labels,
-        #        but due to a failure, the new labels are not saved
-
-        # Get old labels
-        old_labels = []
-        ret = self.api.list_node(watch=False)
-        for node in ret.items:
-            for label in node.metadata.labels:
-                if "rtt" in label:
-                    if label not in old_labels:
-                        old_labels.append(label)
-
-        # Delete old labels
-        old_labels_dict = {label: None for label in old_labels}
-        api_instance = client.CoreV1Api()
-        body = {
-            "metadata": {
-                "labels": old_labels_dict
-            }
-        }
-        api_response = api_instance.patch_node(node_name, body)
-
-        # Upload new labels
-        for key, value in labels.items():
-            api_instance = client.CoreV1Api()
-            label_value = "_".join(value)
-            body = {
-                "metadata": {
-                    "labels": {
-                        key: label_value
-                    }
-                }
-            }
-            api_response = api_instance.patch_node(node_name, body)
-
 
     def do_measuring(self,deployment_ip_mapping, pod_nodes_mapping):
         if (len(self.permutations)==0):
@@ -210,20 +150,20 @@ class LatencyCalculator(object):
                     if pod_nodes_mapping[pod]==j:
                         pod_name = pod
                         break
-                print("\tMeasuring {} <-> {}".format(pod_name, deployment_ip_mapping[i]))
-                rtt_matrix[i][j] = self.measure_latency(pod_name, deployment_ip_mapping[i])
+                print("\tMeasuring Bandwidth {} <-> {}".format(pod_name, deployment_ip_mapping[i]))
+                rtt_matrix[i][j] = self.measure_bandwidth(pod_name, deployment_ip_mapping[i])
         return rtt_matrix
 
 
-    def generate_latency_matrix(self):
-        print("--- --- Start generating latency matrix")
-        self.pod_IPs = self.get_ping_pod_IPs(self.ping_pod_list, self.pod_IPs)
+    def generate_bandwidth_matrix(self):
+        print("--- --- Start generating bandwidth matrix")
+        self.pod_IPs = self.get_bandwidth_pod_IPs(self.bandwidth_pod_list, self.pod_IPs)
         
-        # Deploy latency measurement pods
-        self.deploy_rtt_deployment(self.pod_IPs, self.pod_nodes_mapping)
-        self.check_rtt_deployment(self.ping_pod_list)
+        # Deploy bandwidth measurement pods
+        self.deploy(self.pod_IPs, self.pod_nodes_mapping)
+        self.check_deployment(self.bandwidth_pod_list)
 
-        self.pod_IPs = self.get_ping_pod_IPs(self.ping_pod_list, self.pod_IPs)
+        self.pod_IPs = self.get_bandwidth_pod_IPs(self.bandwidth_pod_list, self.pod_IPs)
 
         # Measure latency
         deployment_ip_mapping = self.get_deployment_ip_mapping()
