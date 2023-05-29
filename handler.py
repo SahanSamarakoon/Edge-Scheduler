@@ -2,6 +2,7 @@ import time
 import yaml
 from strategies.scaler import Scaler
 from kubernetes import client, config
+from strategies.config_update import ConfigUpdate
 
 
 class Handler(object):
@@ -13,7 +14,9 @@ class Handler(object):
         self.latency_matrix = dict()
         self.bandwidth_matrix = dict()
         self.configs = ""
-        self.scaler = Scaler()  # Create an instance of the Scaler class
+        self.scaler = Scaler()
+        self.config_updater = ConfigUpdate()
+        # Create an instance of the Scaler class
 
     @staticmethod
     def load_config(self):
@@ -44,7 +47,8 @@ class Handler(object):
     def get_pods_on_node(self, node_name, kube_system=False):
         if not kube_system:
             return [x for x in self.v1.list_pod_for_all_namespaces(watch=False).items if
-                    (x.metadata.namespace != 'kube-system' and x.metadata.namespace != 'kubernetes-dashboard') and x.spec.node_name == node_name and "ping-pod" not in x.metadata.name]
+                    (
+                                x.metadata.namespace != 'kube-system' and x.metadata.namespace != 'kubernetes-dashboard') and x.spec.node_name == node_name and "ping-pod" not in x.metadata.name]
         else:
             return [x for x in self.v1.list_pod_for_all_namespaces(watch=False).items if x.spec.node_name == node_name]
 
@@ -98,7 +102,7 @@ class Handler(object):
                                     ##TO_DO
                                     check = self.check_pod(pod, node)
                                 case "config_update":
-                                    ##TO_DO
+                                    self.config_updater.update_config(pod, node, self.bandwidth_matrix)
                                     check = self.check_pod(pod, node)
                         else:
                             break

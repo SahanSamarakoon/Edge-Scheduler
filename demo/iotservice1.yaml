@@ -15,6 +15,7 @@ spec:
         area: zone1
         qos_latency: "100"
         qos_bandwidth: "10"
+        device_ip : "192.168.4.1"
     spec:
       containers:
         - name: iotservice1pod1-container

@@ -82,29 +82,31 @@ class CustomScheduler(object):
                 bandwidth_list[str(node)] = 1000
 
         priority = self.configs.get("priority")
-        matrix_first = latency_list if list(priority.keys())[0] == "latency" else bandwidth_list
-        matrix_second = bandwidth_list if list(priority.keys())[1] == "bandwidth" else latency_list
 
-        node_names_first = set()
-        for edge, status in matrix_first.items():
-            requirement = required_delay if list(priority.keys())[0] == "latency" else required_bandwidth
-            if status <= requirement:
-                node_names_first.add(edge)
+        matrices = []
+        for priority_name in list(priority.keys()):
+            matrices.append(latency_list if priority_name == "latency" else bandwidth_list)
 
-        node_names_second = set()
-        for edge, status in matrix_second.items():
-            requirement = required_delay if list(priority.keys())[0] == "latency" else required_bandwidth
-            if status <= requirement:
-                node_names_second.add(edge)
+        node_names_array = set()
+        for matrix in matrices:
+            node_names_scoped = set()
+            for edge, status in matrix.items():
+                requirement = required_delay if list(priority.keys())[0] == "latency" else required_bandwidth
+                if status <= requirement:
+                    node_names_scoped.add(edge)
+            node_names_array.add(node_names_scoped)
 
         # Find common nodes
-        common_nodes = node_names_first.intersection(node_names_second)
+        intersection = set()
+
+        for set in node_names_array:
+            intersection.update(set)
 
         # Return common nodes if they exist, else return nodes from matrix_first
-        if common_nodes:
-            node_names = common_nodes
+        if intersection:
+            node_names = intersection
         else:
-            return node_names_first
+            return node_names_array[0]
 
         return [self.get_node_from_name(x) for x in node_names if x in available_nodes]
 
