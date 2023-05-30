@@ -14,10 +14,10 @@ class CustomScheduler(object):
         self.v1 = client.CoreV1Api()
         self.scheduler_name = scheduler_name
         self.placeholders = []
-        self.rescedules = dict()
+        self.reschedules = dict()
         self.latency_matrix = dict()
         self.bandwidth_matrix = dict()
-        self.configs = ""
+        self.configs = {}
 
     @staticmethod
     def load_config(self):
@@ -26,7 +26,7 @@ class CustomScheduler(object):
             with open('config.yaml') as f:
                 self.configs = yaml.safe_load(f)
         except FileNotFoundError as e:
-            # print("WARNING %s\n" % e)
+            print("WARNING %s\n" % e)
             config.load_incluster_config()
 
     @staticmethod
@@ -87,20 +87,20 @@ class CustomScheduler(object):
         for priority_name in list(priority.keys()):
             matrices.append(latency_list if priority_name == "latency" else bandwidth_list)
 
-        node_names_array = set()
+        node_names_array = list()
         for matrix in matrices:
             node_names_scoped = set()
             for edge, status in matrix.items():
                 requirement = required_delay if list(priority.keys())[0] == "latency" else required_bandwidth
                 if status <= requirement:
                     node_names_scoped.add(edge)
-            node_names_array.add(node_names_scoped)
+            node_names_array.append(node_names_scoped)
 
         # Find common nodes
         intersection = set()
 
-        for set in node_names_array:
-            intersection.update(set)
+        for single_set in node_names_array:
+            intersection.update(single_set)
 
         # Return common nodes if they exist, else return nodes from matrix_first
         if intersection:
@@ -171,7 +171,7 @@ class CustomScheduler(object):
 
     def patch_pod(self, pod, node, namespace="default"):
         # FIXME: '-' character assumed as splitting character
-        self.rescedules[pod.metadata.name.split('-')[0]] = node
+        self.reschedules[pod.metadata.name.split('-')[0]] = node
         self.v1.delete_namespaced_pod(name=pod.metadata.name, namespace=namespace)
 
     def bind(self, pod, node, namespace="default"):
@@ -186,8 +186,18 @@ class CustomScheduler(object):
             api_response = self.v1.create_namespaced_pod_binding(name=pod.metadata.name, namespace=namespace, body=body)
             return api_response
         except Exception as e:
-            # print("Warning when calling CoreV1Api->create_namespaced_pod_binding: %s\n" % e)
+            print("Warning when calling CoreV1Api->create_namespaced_pod_binding: %s\n" % e)
             pass
+
+    def get_memory_matrix(self, placeholder, nodes_enough_resource):
+        placeholder_memory_matrix = {}
+        for n in nodes_enough_resource:
+            if n.metadata.name != placeholder.node:
+                placeholder_memory_matrix[n.metadata.name] = 0
+                for pod in self.get_pods_on_node(n.metadata.name):
+                    if pod.metadata.name.split('-')[0] in placeholder.pods:
+                        placeholder_memory_matrix[n.metadata.name] += self.get_pod_memory_request(pod)
+        return placeholder_memory_matrix
 
     def reused_placeholder_used_pod_node(self, placeholder, pod, nodes_enough_resource):
         placeholder_memory_matrix = self.get_memory_matrix(placeholder, nodes_enough_resource)
@@ -280,6 +290,13 @@ class CustomScheduler(object):
         except StopIteration:
             return False, None
 
+    def get_all_pods(self, kube_system=False):
+        if not kube_system:
+            return [x for x in self.v1.list_pod_for_all_namespaces(watch=False).items if
+                    x.metadata.namespace != 'kube-system']
+        else:
+            return self.v1.list_pod_for_all_namespaces(watch=False).items
+
     def new_pod(self, pod, namespace="default"):
         # New Pod request
         # Get the delay constraint value from the labels
@@ -327,17 +344,17 @@ class CustomScheduler(object):
         print("Scheduling Started ...")
         # self.update_latency_matrix()
 
-        if pod.metadata.name.split('-')[0] in self.rescedules.keys():
+        if pod.metadata.name.split('-')[0] in self.reschedules.keys():
             print("Rescheduling Pod")
-            node = self.rescedules[pod.metadata.name.split('-')[0]]
-            del self.rescedules[pod.metadata.name.split('-')[0]]
+            node = self.reschedules[pod.metadata.name.split('-')[0]]
+            del self.reschedules[pod.metadata.name.split('-')[0]]
             self.bind(pod, node)
             return
 
         any_assigned_placeholder, placeholder = self.pod_has_placeholder(pod)
         if any_assigned_placeholder:
             # Check for destroyed pods by destroyer
-            if (self.check_destroyed(pod, placeholder.node)):
+            if self.check_destroyed(pod, placeholder.node):
                 print("Destroyed Pod Detected")
                 self.placeholders.remove(placeholder)
                 self.new_pod(pod)

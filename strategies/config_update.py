@@ -1,4 +1,4 @@
-from kubernetes import client, config, utils
+from kubernetes import client, config
 from kubernetes.stream import stream
 
 
@@ -13,7 +13,7 @@ class ConfigUpdate(object):
         try:
             config.load_kube_config()
         except FileNotFoundError as e:
-            # print("WARNING %s\n" % e)
+            print("WARNING %s\n" % e)
             config.load_incluster_config()
 
     def config_selector(self, available_bandwidth):
@@ -35,7 +35,7 @@ class ConfigUpdate(object):
     def update_config(self, pod, node, bandwidth_matrix):
         namespace = 'default'
 
-        available_bandwidth = int(self.bandwidth_matrix.get(pod.metadata.name).get(node))
+        available_bandwidth = int(bandwidth_matrix.get(pod.metadata.name).get(node))
         quality = self.config_selector(available_bandwidth)
 
         url = "https://"+pod.metadata.labels['device_ip']+"/mjpeg"

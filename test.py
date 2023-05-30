@@ -2,6 +2,7 @@ import yaml
 
 with open('config.yaml') as f:
     data = yaml.safe_load(f)
+    print(data)
     priority=data.get("priority")
     matrix_first = list(priority.keys())[0]
     matrix_second = list(priority.keys())[1]

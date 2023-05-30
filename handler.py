@@ -13,7 +13,7 @@ class Handler(object):
         self.apps_v1 = client.AppsV1Api()
         self.latency_matrix = dict()
         self.bandwidth_matrix = dict()
-        self.configs = ""
+        self.configs = {}
         self.scaler = Scaler()
         self.config_updater = ConfigUpdate()
         # Create an instance of the Scaler class
@@ -25,7 +25,7 @@ class Handler(object):
             with open('config.yaml') as f:
                 self.configs = yaml.safe_load(f)
         except FileNotFoundError as e:
-            # print("WARNING %s\n" % e)
+            print("WARNING %s\n" % e)
             config.load_incluster_config()
 
     def set_latency_matrix(self, new_latency_matrix):

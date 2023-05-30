@@ -19,7 +19,7 @@ def update_latency_matrix():
     while (True):
         time.sleep(5)
         global latency_matrix
-        latency_matrix_cpy = latency_calculator_ob.labeling()
+        latency_matrix_cpy = latency_calculator_ob.generate_latency_matrix()
         latency_matrix = latency_matrix_cpy
         print("Latency Matrix Updated")
 
@@ -29,7 +29,7 @@ def update_bandwidth_matrix():
     while (True):
         time.sleep(5)
         global bandwidth_matrix
-        bandwidth_matrix_cpy = bandwidth_calculator_ob.labeling()
+        bandwidth_matrix_cpy = bandwidth_calculator_ob.generate_bandwidth_matrix()
         bandwidth_matrix = bandwidth_matrix_cpy
         print("Bandwidth Matrix Updated")
 
