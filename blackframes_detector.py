@@ -1,25 +1,21 @@
 #!/usr/bin/env python3
 
-from os import path
-
-from kubernetes import client, config, utils
-from kubernetes.client.apis import core_v1_api
-from kubernetes.client.rest import ApiException
+from kubernetes import client, config
 from kubernetes.stream import stream
 import time
 import itertools
 import numpy as np
 
-class BandwidthCalculator(object):
+class BlackframesDetector(object):
 
     def __init__(self):
         self.load_config()
         self.api = client.CoreV1Api()
         self.kube_client = client.AppsV1Api()
         self.nodes = self.get_worker_node_names()
-        self.bandwidth_pod_list = ["bandwidth-pod{}".format(i) for i in range(1, len(self.nodes) + 1)]
-        self.pod_nodes_mapping = {self.bandwidth_pod_list[i]: self.nodes[i] for i in range(len(self.bandwidth_pod_list))}
-        self.pod_IPs = {self.bandwidth_pod_list[i]: None for i in range(len(self.bandwidth_pod_list))}
+        self.black_frames_monitoring_pod_list = ["black-frames-monitoring-pod{}".format(i) for i in range(1, len(self.nodes) + 1)]
+        self.pod_nodes_mapping = {self.black_frames_monitoring_pod_list[i]: self.nodes[i] for i in range(len(self.black_frames_monitoring_pod_list))}
+        self.pod_IPs = {self.black_frames_monitoring_pod_list[i]: None for i in range(len(self.black_frames_monitoring_pod_list))}
         self.permutations = []
 
     @staticmethod
@@ -48,12 +44,11 @@ class BandwidthCalculator(object):
                     if key in label:
                         return label_value
 
-
     def create_pod_template(self,pod_name, node_name):
         # Configureate Pod template container
         container = client.V1Container(
             name=pod_name,
-            image='nishanjay98/bandwidth-monitor:1.0.3',
+            image='nishanjay98/blackframes_monitor:1.0.0',
             command=['sleep','infinity'],
             image_pull_policy='IfNotPresent')
 
@@ -75,9 +70,8 @@ class BandwidthCalculator(object):
                 api_response = api_instance.create_namespaced_pod(namespace, body)
                 print("--- {} is deployed in {}".format(str(pod),str(pod_node_mapping[pod])))
 
-
-    def check_deployment(self,bandwidth_pods):
-        for pod in bandwidth_pods:
+    def check_deployment(self,black_frames_monitoring_pods):
+        for pod in black_frames_monitoring_pods:
             running = False
             time_out = 120
             cur_time = 0
@@ -92,14 +86,13 @@ class BandwidthCalculator(object):
                 raise Exception("TIMEOUT: Pod {} is not running".format(pod))
 
 
-    def get_bandwidth_pod_IPs(self,ping_pods, pod_IPs):
+    def get_black_frames_monitoring_pod_IPs(self,black_frames_monitoring_pods, pod_IPs):
         ret = self.api.list_pod_for_all_namespaces(watch=False)
         for i in ret.items:
-            if str(i.metadata.name) in ping_pods:
+            if str(i.metadata.name) in black_frames_monitoring_pods:
                 pod_IPs[i.metadata.name] = i.status.pod_ip
 
         return pod_IPs
-    
 
     def get_pods_esp32_map(self):
         pods_esp32_map = {}
@@ -112,9 +105,9 @@ class BandwidthCalculator(object):
                 pods_esp32_map[pod_name]["port"] = self.get_label_value_of("port",pod_name)
         return pods_esp32_map
 
-    def measure_bandwidth(self,pod_from, esp32_ip,port,count):
-        namespace = 'default' 
-        python_command = f'python scapy_main.py --ip {esp32_ip} --port {port} --url "http://{esp32_ip}:{port}/videofeed?username=&password=" --count {count}'
+    def check_black_frames(self,pod_from, esp32_ip,port):
+        namespace = 'default'
+        python_command = f'python blackframes_monitor.py --url "http://{esp32_ip}:{port}/videofeed?username=&password=" --intensity 10 --count 30'
 
         exec_command = ['/bin/sh', '-c', python_command]
 
@@ -122,67 +115,61 @@ class BandwidthCalculator(object):
                     command=exec_command,
                     stderr=True, stdin=False,
                     stdout=True, tty=False)
-        bandwidth_measurements = []
+        black_frames_detections = []
         for line in resp.split('\n'):
                 if(line!=""):
-                    bandwidth = float(line.split(':')[1][1:-9])
-                    bandwidth_measurements.append(bandwidth)
-        np_bandwidth_measurements = np.array(bandwidth_measurements)
-        bandwidth_value = np.percentile(np_bandwidth_measurements, 5)
-        return bandwidth_value
+                    black_frame_detected = int(line)
+                    black_frames_detections.append(black_frame_detected)
+        black_frames_count = black_frames_detections.count(0)
+        if (black_frames_count > len(black_frames_detections)/4):
+            return 0
+        return 1
 
-    def get_zone_label_of_node(self,node_name):
-        ret = self.api.list_node(watch=False)
-        for node in ret.items:
-            if (node.metadata.name == node_name):
-                for label,label_value in node.metadata.labels.items():
-                    if "area" in label:
-                            return label_value
+    def is_iot_pod_available_on_node(self,node_name):
+        # Get the list of pods in the cluster
+        pods = self.api.list_pod_for_all_namespaces().items
+        iot_pod_available = False
 
-    def get_zone_label_of_deployment(self,pod_name):
-        ret = self.api.list_pod_for_all_namespaces(watch=False)
-        for pod in ret.items:
-            if (str(pod.metadata.name) == pod_name):
-                for label,label_value in pod.metadata.labels.items():
-                    if "area" in label:
-                            return label_value
-
+        for pod in pods:
+            if ("iot" in str(pod.metadata.name) and pod.spec.node_name == node_name):
+                iot_pod_available = True
+                break
+        return iot_pod_available
 
     def do_measuring(self,pods_esp32_map, pod_nodes_mapping):
         if (len(self.permutations)==0):
             self.permutations = list(itertools.product(list(pods_esp32_map.keys()),list(pod_nodes_mapping.values())))
-        bandwidth_matrix = {i: {j:np.inf for (i, j) in self.permutations } for (i, j) in self.permutations}
+        black_frames_availability_matrix = {i: {j:np.inf for (i, j) in self.permutations } for (i, j) in self.permutations}
         for i, j in self.permutations:
+            iot_pod_available = self.is_iot_pod_available_on_node(j)
             # deployment_name = i.split('-')[0]
-            end_device_zone = self.get_zone_label_of_deployment(i)
-            edge_node_zone = self.get_zone_label_of_node(j)
-            if (end_device_zone==edge_node_zone and bandwidth_matrix[i][j] == np.inf):
+            if (iot_pod_available and black_frames_availability_matrix[i][j] == np.inf):
                 for pod in pod_nodes_mapping:
                     if pod_nodes_mapping[pod]==j:
                         pod_name = pod
                         break
-                print("\tMeasuring Bandwidth {} <-> {}".format(pod_name, pods_esp32_map[i]["ip"]))
-                bandwidth_matrix[i][j] = self.measure_bandwidth(pod_name, pods_esp32_map[i]["ip"] , pods_esp32_map[i]["port"],15)
-        return bandwidth_matrix
+                print("\tChecking Black Frames {} <-> {}".format(pod_name, pods_esp32_map[i]["ip"]))
+                black_frames_availability_matrix[i][j] = self.check_black_frames(pod_name, pods_esp32_map[i]["ip"] , pods_esp32_map[i]["port"])
+        return black_frames_availability_matrix
 
 
-    def generate_bandwidth_matrix(self):
-        print("--- --- Start generating bandwidth matrix")
-        self.pod_IPs = self.get_bandwidth_pod_IPs(self.bandwidth_pod_list, self.pod_IPs)
+    def generate_blackframes_availability_matrix(self):
+        print("--- --- Start detecting black frames")
+        self.pod_IPs = self.get_black_frames_monitoring_pod_IPs(self.black_frames_monitoring_pod_list, self.pod_IPs)
         
         # Deploy bandwidth measurement pods
         self.deploy(self.pod_IPs, self.pod_nodes_mapping)
-        self.check_deployment(self.bandwidth_pod_list)
+        self.check_deployment(self.black_frames_monitoring_pod_list)
 
-        self.pod_IPs = self.get_bandwidth_pod_IPs(self.bandwidth_pod_list, self.pod_IPs)
+        self.pod_IPs = self.get_black_frames_monitoring_pod_IPs(self.black_frames_monitoring_pod_list, self.pod_IPs)
 
         # Measure latency
         pods_esp32_map = self.get_pods_esp32_map()
-        bandwidth_matrix = self.do_measuring(pods_esp32_map, self.pod_nodes_mapping)
-        print("BANDWIDTH MATRIX:")
-        print(bandwidth_matrix)
+        black_frames_availability_matrix = self.do_measuring(pods_esp32_map, self.pod_nodes_mapping)
+        print("BLACK FRAMES AVAILABILITY MATRIX:")
+        print(black_frames_availability_matrix)
 
-        return bandwidth_matrix
+        return black_frames_availability_matrix
 
     # To create IoT Service Pods:
     # kubectl create deployment iot-service --image=busybox --replicas=2 -- sleep infinity

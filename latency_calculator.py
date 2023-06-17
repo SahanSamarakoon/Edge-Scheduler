@@ -39,7 +39,14 @@ class LatencyCalculator(object):
         print(worker_nodes)
         worker_nodes.sort()
         return worker_nodes
-
+    
+    def get_label_value_of(self,key,pod_name):
+        ret = self.api.list_pod_for_all_namespaces(watch=False)
+        for pod in ret.items:
+            if (str(pod.metadata.name) == pod_name):
+                for label,label_value in pod.metadata.labels.items():
+                    if key in label:
+                        return label_value
 
     def create_pod_template(self,pod_name, node_name):
         # Configureate Pod template container
@@ -101,14 +108,15 @@ class LatencyCalculator(object):
         print("--- --- Ping pods cannot be found")
         return False
 
-    def get_deployment_ip_mapping(self):
-        deployment_ip_mapping = {}
+    def get_pods_end_devices_mapping(self):
+        pods_end_devices_map = {}
         ret = self.api.list_pod_for_all_namespaces(watch=False)
         for i in ret.items:
-            if "iot" in str(i.metadata.name):
-                deployment_ip_mapping[i.metadata.name] = '192.168.190.85'
-                # deployment_ip_mapping[i.metadata.name] = i.status.pod_ip
-        return deployment_ip_mapping
+            pod_name = i.metadata.name
+            if "iot" in str(pod_name):
+                pods_end_devices_map[pod_name] = {}
+                pods_end_devices_map[pod_name]["ip"] = self.get_label_value_of("esp32_ip",pod_name)
+        return pods_end_devices_map
 
     def measure_latency(self,pod_from, end_device_IP):
         namespace = 'default'
@@ -197,9 +205,9 @@ class LatencyCalculator(object):
             api_response = api_instance.patch_node(node_name, body)
 
 
-    def do_measuring(self,deployment_ip_mapping, pod_nodes_mapping):
+    def do_measuring(self,pods_end_devices_mapping, pod_nodes_mapping):
         if (len(self.permutations)==0):
-            self.permutations = list(itertools.product(list(deployment_ip_mapping.keys()),list(pod_nodes_mapping.values())))
+            self.permutations = list(itertools.product(list(pods_end_devices_mapping.keys()),list(pod_nodes_mapping.values())))
         rtt_matrix = {i: {j:np.inf for (i, j) in self.permutations } for (i, j) in self.permutations}
         for i, j in self.permutations:
             # deployment_name = i.split('-')[0]
@@ -210,8 +218,8 @@ class LatencyCalculator(object):
                     if pod_nodes_mapping[pod]==j:
                         pod_name = pod
                         break
-                print("\tMeasuring {} <-> {}".format(pod_name, deployment_ip_mapping[i]))
-                rtt_matrix[i][j] = self.measure_latency(pod_name, deployment_ip_mapping[i])
+                print("\tMeasuring {} <-> {}".format(pod_name, pods_end_devices_mapping[i]["ip"]))
+                rtt_matrix[i][j] = self.measure_latency(pod_name, pods_end_devices_mapping[i]["ip"])
         return rtt_matrix
 
 
@@ -226,15 +234,15 @@ class LatencyCalculator(object):
         self.pod_IPs = self.get_ping_pod_IPs(self.ping_pod_list, self.pod_IPs)
 
         # Measure latency
-        deployment_ip_mapping = self.get_deployment_ip_mapping()
-        rtt_matrix = self.do_measuring(deployment_ip_mapping, self.pod_nodes_mapping)
+        pods_end_devices_mapping = self.get_pods_end_devices_mapping()
+        rtt_matrix = self.do_measuring(pods_end_devices_mapping, self.pod_nodes_mapping)
         print("RTT MATRIX:")
         print(rtt_matrix)
 
         return rtt_matrix
 
     # To create IoT Service Pods:
-    # kubectl create deployment iot-service --image=busybox --replicas=2 -- sleep infinity
+    # kubectl create deployment iot-service --image=busybox --replicas=1 -- sleep infinity
 
     # To check pod ips
     # kubectl get pods --output=wide
