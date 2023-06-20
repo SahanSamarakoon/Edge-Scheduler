@@ -17,7 +17,9 @@ spec:
         qos_bandwidth: "1000"
         device_ip : "192.168.4.1"
         strategies : migration, firmware, reconfiguration
-        firmware : ota, reset
+        firmware :
+          ota : distortion
+          reboot : no_response
         reconfiguration :
           FRAMESIZE_QQVGA : 250
           FRAMESIZE_HQVGA : 400

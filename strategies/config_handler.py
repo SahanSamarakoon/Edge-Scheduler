@@ -20,27 +20,23 @@ class ConfigHandler(object):
             print("WARNING %s\n" % e)
             config.load_incluster_config()
 
-    def config_selector(self, available_bandwidth):
-        if available_bandwidth >= 90:
-            return 9
-        elif available_bandwidth >= 80:
-            return 8
-        elif available_bandwidth >= 70:
-            return 7
-        elif available_bandwidth >= 60:
-            return 6
-        elif available_bandwidth >= 50:
-            return 5
-        elif available_bandwidth >= 40:
-            return 4
-        else:
-            return 1
+    def config_selector(self, pod, available_bandwidth):
+        config_dict = pod.metadata.labels['reconfiguration']
+        min_difference = float('inf')
+        selected_config = None
+
+        for config, required_bandwidth in config_dict.items():
+            difference = abs(required_bandwidth - available_bandwidth)
+            if difference < min_difference:
+                min_difference = difference
+                selected_config = config
+        return selected_config
 
     def update_config(self, pod, available_bandwidth):
         namespace = 'default'
-        quality = self.config_selector(available_bandwidth)
+        quality = self.config_selector(pod, available_bandwidth)
 
-        url = "https://"+pod.metadata.labels['device_ip']+"/mjpeg"
+        url = "https://" + pod.metadata.labels['device_ip'] + "/mjpeg"
         exec_command = ['/bin/sh', '-c', 'python main.py --url {} --quality {}'.format(url, quality)]
 
         resp = stream(self.api.connect_get_namespaced_pod_exec, pod.metadata.name, namespace,

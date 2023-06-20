@@ -82,7 +82,7 @@ class Analyzer(object):
                         if bandwidth >= required_bandwidth:
                             return "distortion"
 
-                case default:
+                case _:
                     return "none"
 
     def check_violations(self):
