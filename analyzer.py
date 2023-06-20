@@ -46,7 +46,8 @@ class Analyzer(object):
     def get_pods_on_node(self, node_name, kube_system=False):
         if not kube_system:
             return [x for x in self.v1.list_pod_for_all_namespaces(watch=False).items if
-                    (x.metadata.namespace != 'kube-system' and x.metadata.namespace != 'kubernetes-dashboard') and x.spec.node_name == node_name and "ping-pod" not in x.metadata.name]
+                    (
+                                x.metadata.namespace != 'kube-system' and x.metadata.namespace != 'kubernetes-dashboard') and x.spec.node_name == node_name and "ping-pod" not in x.metadata.name]
         else:
             return [x for x in self.v1.list_pod_for_all_namespaces(watch=False).items if x.spec.node_name == node_name]
 
@@ -110,7 +111,7 @@ class Analyzer(object):
                                     check = self.check_pod(pod, node)
                                 case "reconfiguration":
                                     available_bandwidth = int(self.bandwidth_matrix.get(pod.metadata.name).get(node))
-                                    self.config_updater.update_config(pod, available_bandwidth)
+                                    self.config_updater.update_config(pod, node, available_bandwidth)
                                     time.sleep(60)
                                     check = self.check_pod(pod, node)
                         else:

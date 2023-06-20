@@ -32,7 +32,7 @@ class ConfigHandler(object):
                 selected_config = config
         return selected_config
 
-    def update_config(self, pod, available_bandwidth):
+    def update_config(self, pod, node, available_bandwidth):
         namespace = 'default'
         quality = self.config_selector(pod, available_bandwidth)
 
