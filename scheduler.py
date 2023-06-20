@@ -23,8 +23,8 @@ class CustomScheduler(object):
     def load_config(self):
         try:
             config.load_kube_config()
-            with open('config.yaml') as f:
-                self.configs = yaml.safe_load(f)
+            with open('rule_collection.yaml') as f:
+                self.rules = yaml.safe_load(f)
         except FileNotFoundError as e:
             print("WARNING %s\n" % e)
             config.load_incluster_config()

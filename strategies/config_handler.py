@@ -1,17 +1,21 @@
 from kubernetes import client, config
 from kubernetes.stream import stream
+import yaml
 
 
-class ConfigUpdate(object):
+class ConfigHandler(object):
 
     def __init__(self):
+        self.configs = {}
         self.load_config()
         self.api = client.CoreV1Api()
 
     @staticmethod
-    def load_config():
+    def load_config(self):
         try:
             config.load_kube_config()
+            with open('rule_collection.yaml') as f:
+                self.rules = yaml.safe_load(f)
         except FileNotFoundError as e:
             print("WARNING %s\n" % e)
             config.load_incluster_config()
@@ -32,10 +36,8 @@ class ConfigUpdate(object):
         else:
             return 1
 
-    def update_config(self, pod, node, bandwidth_matrix):
+    def update_config(self, pod, available_bandwidth):
         namespace = 'default'
-
-        available_bandwidth = int(bandwidth_matrix.get(pod.metadata.name).get(node))
         quality = self.config_selector(available_bandwidth)
 
         url = "https://"+pod.metadata.labels['device_ip']+"/mjpeg"

@@ -13,9 +13,20 @@ spec:
       labels:
         app: iotservice01
         area: zone1
-        qos_latency: "100"
-        qos_bandwidth: "10"
+        qos_latency: "40"
+        qos_bandwidth: "1000"
         device_ip : "192.168.4.1"
+        strategies : migration, firmware, reconfiguration
+        firmware : ota, reset
+        reconfiguration :
+          FRAMESIZE_QQVGA : 250
+          FRAMESIZE_HQVGA : 400
+          FRAMESIZE_QVGA : 700
+          FRAMESIZE_CIF: 800
+          FRAMESIZE_VGA : 900
+          FRAMESIZE_SVGA : 1000
+          FRAMESIZE_UXGA : 1100
+
     spec:
       containers:
         - name: iotservice1pod1-container

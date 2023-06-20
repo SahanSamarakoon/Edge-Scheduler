@@ -6,7 +6,7 @@ import concurrent.futures
 from kubernetes.client.rest import ApiException
 from kubernetes import client, watch
 from scheduler import CustomScheduler
-from handler import Handler
+from analyzer import Analyzer
 from latency_calculator import LatencyCalculator
 from bandwidth_calculator import BandwidthCalculator
 
@@ -52,14 +52,14 @@ def schedule():
                 print(json.loads(e.body)['message'])
 
 
-def handler():
-    print("Handler is starting...")
-    handler_ob = Handler()
+def analyzer():
+    print("Analyzer is starting...")
+    analyzer_ob = Analyzer()
     while (True):
-        handler_ob.set_latency_matrix(latency_matrix)
-        handler_ob.set_bandwidth_matrix(bandwidth_matrix)
-        handler_ob.check_violations()
-        print("Handler - Wait for 15s...")
+        analyzer_ob.set_latency_matrix(latency_matrix)
+        analyzer_ob.set_bandwidth_matrix(bandwidth_matrix)
+        analyzer_ob.check_violations()
+        print("Analyzer - Wait for 15s...")
         time.sleep(5)
 
 
@@ -68,4 +68,4 @@ if __name__ == '__main__':
         latency_labeler = executor.submit(update_latency_matrix)
         bandwidth_labeler = executor.submit(update_bandwidth_matrix)
         scheduler_thread = executor.submit(schedule)
-        handler_thread = executor.submit(handler)
+        analyzer_thread = executor.submit(analyzer)
