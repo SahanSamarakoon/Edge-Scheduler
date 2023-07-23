@@ -105,14 +105,17 @@ class Analyzer(object):
                                     self.scaler.scale(pod)  # Call the scaler method from the Migration instance
                                     time.sleep(60)
                                     check = self.check_pod(pod, node)
+                                    break
                                 case "firmware":
                                     ##TO_DO
                                     time.sleep(60)
                                     check = self.check_pod(pod, node)
+                                    break
                                 case "reconfiguration":
                                     available_bandwidth = int(self.bandwidth_matrix.get(pod.metadata.name).get(node))
                                     self.config_updater.update_config(pod, node, available_bandwidth)
                                     time.sleep(60)
                                     check = self.check_pod(pod, node)
+                                    break
                         else:
                             break
