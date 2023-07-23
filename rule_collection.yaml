@@ -1,0 +1,9 @@
+priority:
+  iotservice01:
+    latency: migration, reconfiguration
+    bandwidth: reconfiguration, migration
+    distortion : firmware
+
+  iot_device_type:
+    violation_01: stratergy_01, stratergy_02
+    violation_02: stratergy_03, stratergy_02
